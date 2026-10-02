@@ -9,7 +9,8 @@
       "cwd": "${workspaceFolder}",
       "executable": "${workspaceFolder}/build/Debug/AT32F421G8U7_WorkBench.elf",
       "gdbPath": "C:/DevEnv/GNU-tools-for-STM32/bin/arm-none-eabi-gdb.exe",
-      "openocdPath": "${env:LOCALAPPDATA}/at32-tools/OpenOCD/V2.0.9/bin/openocd.exe",
+      "serverpath": "C:/Users/xiao1/AppData/Local/at32-tools/OpenOCD/V2.0.9/bin/openocd.exe",
+      "openocdPath": "C:/Users/xiao1/AppData/Local/at32-tools/OpenOCD/V2.0.9/bin/openocd.exe",
       "configFiles": [
         "openocd/interface/cmsis-dap.cfg",
         "openocd/target/at32f421xx.cfg"
