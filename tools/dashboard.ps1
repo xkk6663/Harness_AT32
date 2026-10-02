@@ -2,20 +2,38 @@
 # dashboard.ps1 — 一键启动工具链驾驶舱（Step 8）
 #
 # 用法: 在工程根目录运行
-#   pwsh -File tools\dashboard.ps1 [-Port 8080]
+#   pwsh -File tools\dashboard.ps1 [-Port 8080] [-SerialPort COM10]
+#   -SerialPort 缺省时自动探测(DAPLink/CP210x/FTDI/CH340 优先)。
+#   串口直连模式: dashboard 服务持有串口, 前端串口面板实时刷新;
+#   此模式下不要再同时运行 tools\serial.ps1(端口独占)。
 #
 # 启动本机数据服务（127.0.0.1 安全绑定）+ 自动打开浏览器。
 # 服务日志: logs\dashboard_server.log
-# 停止服务: Stop-Process -Name pwsh? 见下（用固定标题窗口便于查找）
 # ============================================================
 param(
-    [int]$Port = 8080
+    [int]$Port = 8080,
+    [string]$SerialPort = ""
 )
 
 $Project = Split-Path $PSScriptRoot -Parent
 $Server = Join-Path $PSScriptRoot "dashboard_server.ps1"
 $SrvLog = Join-Path $Project "logs\dashboard_server.log"
 New-Item -ItemType Directory -Force (Split-Path $SrvLog) | Out-Null
+
+# 自动探测串口(DAPLink 优先, 其次常见 USB 串口)
+if ($SerialPort -eq "") {
+    foreach ($c in @([System.IO.Ports.SerialPort]::GetPortNames())) {
+        try {
+            $dev = Get-CimInstance Win32_PnPEntity -ErrorAction Stop |
+                Where-Object { $_.Name -match "\($c\)" } | Select-Object -First 1
+            if ($dev -and $dev.Name -match 'DAPLink|CMSIS-DAP|CP210x|FTDI|CH340|USB Serial') {
+                $SerialPort = $c; break
+            }
+        } catch { }
+    }
+}
+if ($SerialPort -ne "") { Write-Host "串口直连: $SerialPort (dashboard 实时模式)" }
+else { Write-Host "未探测到串口 → 串口面板回退显示 logs/serial.log" }
 
 # 检查是否已在运行
 $alive = $false
@@ -25,10 +43,12 @@ try {
 } catch { }
 
 if ($alive) {
-    Write-Host "服务已在运行: http://127.0.0.1:$Port"
+    Write-Host "服务已在运行: http://127.0.0.1:$Port (若要启用串口直连, 先停旧服务再启动)"
 } else {
     # 独立进程启动（隐藏窗口），不随本会话结束
-    Start-Process pwsh -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$Server`" -Port $Port" `
+    $args = "-NoProfile -ExecutionPolicy Bypass -File `"$Server`" -Port $Port"
+    if ($SerialPort -ne "") { $args += " -SerialPort $SerialPort" }
+    Start-Process pwsh -ArgumentList $args `
         -WindowStyle Hidden -RedirectStandardOutput $SrvLog -RedirectStandardError "$SrvLog.err"
     Start-Sleep -Milliseconds 1200
     Write-Host "服务已启动: http://127.0.0.1:$Port  (日志: $SrvLog)"

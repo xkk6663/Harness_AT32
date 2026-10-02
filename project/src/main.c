@@ -150,6 +150,10 @@ int main(void)
                  (unsigned long)ADC_InjectedValues[2],
                  (unsigned long)ADC_InjectedValues[3]);
 
+    /* Fix: 挂电机库主循环入口(此前缺失, 导致 User_Initial_Init 从未执行、
+       串口 IDLE 中断未开、RX 协议不工作、遥测帧不发送) */
+    SguanESC_main_Loop();
+
     /* add user code end 3 */
   }
 }

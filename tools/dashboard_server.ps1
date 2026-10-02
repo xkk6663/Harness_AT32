@@ -1,16 +1,20 @@
 # ============================================================
 # dashboard_server.ps1 — 工具链驾驶舱数据服务（Step 8）
 #
-# 用法: pwsh -File tools\dashboard_server.ps1 [-Port 8080]
+# 用法: pwsh -File tools\dashboard_server.ps1 [-Port 8080] [-SerialPort COM10]
 #   Ctrl+C 结束。服务只绑定 127.0.0.1（本机安全）。
+#   -SerialPort: 指定后服务端直接持有串口(115200), 前端串口面板走实时数据;
+#                不指定则回退显示 logs/serial.log(由 tools/serial.ps1 落盘)。
 #
 # API:
 #   GET /                      → dashboard.html
-#   GET /api/status            → 进程/elf/日志元信息/最后心跳
+#   GET /api/status            → 进程/elf/日志元信息/最后心跳/串口连接状态
+#   GET /api/serial            → 串口实时数据(自上次请求以来的新增文本)
 #   GET /api/log?name=<x>&lines=N → 日志尾部 N 行（name ∈ build|flash|debug|serial）
 # ============================================================
 param(
-    [int]$Port = 8080
+    [int]$Port = 8080,
+    [string]$SerialPort = ""
 )
 
 $Root = Split-Path $PSScriptRoot -Parent
@@ -71,6 +75,23 @@ function Get-Status {
         elf        = $elf
         logs       = $logs
         heartbeat  = $heartbeat
+        serial     = @{ connected = ($script:Serial -ne $null); port = $SerialPort }
+    }
+}
+
+# ---- 串口直连（服务端持有串口, 前端实时轮询）----
+$script:Serial = $null
+if ($SerialPort -ne "") {
+    try {
+        $sp = New-Object System.IO.Ports.SerialPort($SerialPort, 115200, 'None', 8, 'One')
+        $sp.ReadTimeout = 300
+        $sp.DtrEnable = $true
+        $sp.RtsEnable = $true
+        $sp.Open()
+        $script:Serial = $sp
+        Write-Host "串口已连接: $SerialPort @115200 (dashboard 实时模式)"
+    } catch {
+        Write-Host "串口连接失败: $SerialPort ($_)  → 回退显示 logs/serial.log"
     }
 }
 
@@ -88,6 +109,14 @@ try {
                 Send-File $ctx $HtmlPath "text/html; charset=utf-8"
             } elseif ($path -eq "/api/status") {
                 Send-Json $ctx (Get-Status)
+            } elseif ($path -eq "/api/serial") {
+                if ($script:Serial -ne $null) {
+                    $data = ""
+                    try { $data = $script:Serial.ReadExisting() } catch { }
+                    Send-Json $ctx @{ live = $true; port = $SerialPort; data = $data }
+                } else {
+                    Send-Json $ctx @{ live = $false; data = "" }
+                }
             } elseif ($path -eq "/api/log") {
                 $name = $ctx.Request.QueryString["name"]
                 $lines = [int]$ctx.Request.QueryString["lines"]

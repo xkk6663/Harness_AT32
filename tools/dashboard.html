@@ -186,12 +186,49 @@ async function poll(){
   renderStatus(st);
   for (var i = 0; i < PANELS.length; i++){
     var name = PANELS[i];
+    if (name === 'serial') {
+      try {
+        var sr = await fetch('/api/serial', {cache:'no-store'});
+        var sd = await sr.json();
+        if (sd.live) { renderSerialLive(sd.data); }
+        else {
+          var rr2 = await fetch('/api/log?name=serial&lines=300', {cache:'no-store'});
+          var d2 = await rr2.json();
+          renderPanel('serial', d2.lines || []);
+        }
+      } catch(e){}
+      continue;
+    }
     try {
       var rr = await fetch('/api/log?name=' + name + '&lines=300', {cache:'no-store'});
       var data = await rr.json();
       renderPanel(name, data.lines || []);
     } catch(e){}
   }
+}
+
+// 串口实时模式: 服务端持有串口, 每次轮询追加新文本(流式)
+function renderSerialLive(data){
+  if (!data) return;
+  var body = el('body-serial');
+  var lines = data.split(/\r?\n/);
+  var html = '', cnt = 0;
+  for (var i = 0; i < lines.length; i++){
+    var raw = lines[i];
+    if (!raw || !raw.trim()) continue;
+    var cls = classify('serial', raw);
+    html += '<div class="line ' + cls + ' fresh">' + esc(raw) + '</div>';
+    cnt++;
+  }
+  if (!html) return;
+  body.insertAdjacentHTML('beforeend', html);
+  var children = body.querySelectorAll('.line');
+  if (children.length > 200) {
+    for (var j = 0; j < children.length - 200; j++) children[j].remove();
+  }
+  body.scrollTop = body.scrollHeight;
+  el('metaSerial').textContent = '+' + cnt + ' 行 · ' + new Date().toLocaleTimeString();
+  el('ledSerial').className = 'led on';
 }
 
 poll();

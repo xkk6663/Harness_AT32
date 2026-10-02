@@ -19,6 +19,9 @@
 #include "UserData_Config.h"
 /* 用户自己的CODE END Includes */
 
+/* 前向声明(static inline 被下文 User_StopMotor_DeInit 在定义前引用) */
+static inline void User_PWM_SWitch(uint8_t Duty_CH, uint8_t Enable);
+
 /**
  * @description: 1.电机上电即初始化的函数接口
  * @reminder: (此方函数->填入一些最先初始化的代码)
@@ -75,7 +78,10 @@ static inline void User_StartMotor_Init(void){
  */
 static inline void User_StopMotor_DeInit(void){
     /* Your code for initing TIM and gate driver and encoder and ADC here */
-
+    // Fix: 停机时三路 PWM 全部强制低(CHx+CHxN 全关, 该相悬浮), 确保失能后无输出
+    User_PWM_SWitch(0, 0);
+    User_PWM_SWitch(1, 0);
+    User_PWM_SWitch(2, 0);
 
     // User profile is like:
     // 关闭PWM输出
