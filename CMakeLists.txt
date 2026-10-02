@@ -6,13 +6,13 @@ cmake_minimum_required(VERSION 3.22)
 
 # Setup compiler settings
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_EXTENSIONS ON)
 
 
 # Define the build type
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Debug")
+    set(CMAKE_BUILD_TYPE Debug)
 endif()
 
 # Set the project name
@@ -26,6 +26,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
 # Core project settings
 project(${CMAKE_PROJECT_NAME})
+set(CMAKE_CXX_STANDARD 17)
 message("Build type: " ${CMAKE_BUILD_TYPE})
 
 # Enable CMake support for ASM and C languages

@@ -1,12 +1,15 @@
 {
   "programmer": "AT-Link/DAP Link",
-  "eraseMode": "sector",
+  "eraseMode": "full",
   "program": true,
   "verify": true,
   "resetAndRun": true,
   "usbMode": "WinUSB",
+  "dapInterface": "3",
+  "autoLinkerScript": true,
   "customCfgFiles": [
     "scripts/target/at32f421xx.cfg"
   ],
-  "customFlmFiles": []
+  "customFlmFiles": [],
+  "jlinkPath": ""
 }
