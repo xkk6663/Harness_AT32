@@ -1,0 +1,14 @@
+# ===== 编译产物 =====
+build/
+*.elf
+*.hex
+*.map
+
+# ===== AT32 VS Code 插件临时文件 =====
+.vscode/tmp_*.cfg
+
+# ===== 编辑器/系统噪音 =====
+.vscode/*.log
+*.swp
+Thumbs.db
+.DS_Store

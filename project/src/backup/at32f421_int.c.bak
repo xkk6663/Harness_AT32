@@ -1,0 +1,325 @@
+/* add user code begin Header */
+/**
+  **************************************************************************
+  * @file     at32f421_int.c
+  * @brief    main interrupt service routines.
+  **************************************************************************
+  * Copyright (c) 2025, Artery Technology, All rights reserved.
+  *
+  * The software Board Support Package (BSP) that is made available to
+  * download from Artery official website is the copyrighted work of Artery.
+  * Artery authorizes customers to use, copy, and distribute the BSP
+  * software and its related documentation for the purpose of design and
+  * development in conjunction with Artery microcontrollers. Use of the
+  * software is governed by this copyright notice and the following disclaimer.
+  *
+  * THIS SOFTWARE IS PROVIDED ON "AS IS" BASIS WITHOUT WARRANTIES,
+  * GUARANTEES OR REPRESENTATIONS OF ANY KIND. ARTERY EXPRESSLY DISCLAIMS,
+  * TO THE FULLEST EXTENT PERMITTED BY LAW, ALL EXPRESS, IMPLIED OR
+  * STATUTORY OR OTHER WARRANTIES, GUARANTEES OR REPRESENTATIONS,
+  * INCLUDING BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY,
+  * FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT.
+  *
+  **************************************************************************
+  */
+/* add user code end Header */
+
+/* includes ------------------------------------------------------------------*/
+#include "at32f421_int.h"
+#include "wk_system.h"
+/* private includes ----------------------------------------------------------*/
+/* add user code begin private includes */
+#include "SguanESC.h"
+#include <at32f421_wk_config.h>
+#include "at32f421_usart.h"
+#include "stdio.h"
+#include "string.h"
+
+
+/* add user code end private includes */
+
+/* private typedef -----------------------------------------------------------*/
+/* add user code begin private typedef */
+
+/* add user code end private typedef */
+
+/* private define ------------------------------------------------------------*/
+/* add user code begin private define */
+
+/* add user code end private define */
+
+/* private macro -------------------------------------------------------------*/
+/* add user code begin private macro */
+
+/* add user code end private macro */
+
+/* private variables ---------------------------------------------------------*/
+/* add user code begin private variables */
+
+/* add user code end private variables */
+
+/* private function prototypes --------------------------------------------*/
+/* add user code begin function prototypes */
+
+/* add user code end function prototypes */
+
+/* private user code ---------------------------------------------------------*/
+/* add user code begin 0 */
+volatile uint32_t ADC_InjectedValues[3] = {0};
+/* add user code end 0 */
+
+/* external variables ---------------------------------------------------------*/
+/* add user code begin external variables */
+
+/* add user code end external variables */
+
+/**
+  * @brief  this function handles nmi exception.
+  * @param  none
+  * @retval none
+  */
+void NMI_Handler(void)
+{
+  /* add user code begin NonMaskableInt_IRQ 0 */
+
+  /* add user code end NonMaskableInt_IRQ 0 */
+
+  /* add user code begin NonMaskableInt_IRQ 1 */
+
+  /* add user code end NonMaskableInt_IRQ 1 */
+}
+
+/**
+  * @brief  this function handles hard fault exception.
+  * @param  none
+  * @retval none
+  */
+void HardFault_Handler(void)
+{
+  /* add user code begin HardFault_IRQ 0 */
+
+  /* add user code end HardFault_IRQ 0 */
+  /* go to infinite loop when hard fault exception occurs */
+  while (1)
+  {
+    /* add user code begin W1_HardFault_IRQ 0 */
+
+    /* add user code end W1_HardFault_IRQ 0 */
+  }
+}
+
+
+/**
+  * @brief  this function handles memory manage exception.
+  * @param  none
+  * @retval none
+  */
+void MemManage_Handler(void)
+{
+  /* add user code begin MemoryManagement_IRQ 0 */
+
+  /* add user code end MemoryManagement_IRQ 0 */
+  /* go to infinite loop when memory manage exception occurs */
+  while (1)
+  {
+    /* add user code begin W1_MemoryManagement_IRQ 0 */
+
+    /* add user code end W1_MemoryManagement_IRQ 0 */
+  }
+}
+
+/**
+  * @brief  this function handles bus fault exception.
+  * @param  none
+  * @retval none
+  */
+void BusFault_Handler(void)
+{
+  /* add user code begin BusFault_IRQ 0 */
+
+  /* add user code end BusFault_IRQ 0 */
+  /* go to infinite loop when bus fault exception occurs */
+  while (1)
+  {
+    /* add user code begin W1_BusFault_IRQ 0 */
+
+    /* add user code end W1_BusFault_IRQ 0 */
+  }
+}
+
+/**
+  * @brief  this function handles usage fault exception.
+  * @param  none
+  * @retval none
+  */
+void UsageFault_Handler(void)
+{
+  /* add user code begin UsageFault_IRQ 0 */
+
+  /* add user code end UsageFault_IRQ 0 */
+  /* go to infinite loop when usage fault exception occurs */
+  while (1)
+  {
+    /* add user code begin W1_UsageFault_IRQ 0 */
+
+    /* add user code end W1_UsageFault_IRQ 0 */
+  }
+}
+
+/**
+  * @brief  this function handles debug monitor exception.
+  * @param  none
+  * @retval none
+  */
+void DebugMon_Handler(void)
+{
+  /* add user code begin DebugMonitor_IRQ 0 */
+
+  /* add user code end DebugMonitor_IRQ 0 */
+  /* add user code begin DebugMonitor_IRQ 1 */
+
+  /* add user code end DebugMonitor_IRQ 1 */
+}
+
+/**
+  * @brief  this function handles systick handler.
+  * @param  none
+  * @retval none
+  */
+void SysTick_Handler(void)
+{
+  /* add user code begin SysTick_IRQ 0 */
+
+  /* add user code end SysTick_IRQ 0 */
+
+  wk_timebase_handler();
+  /* add user code begin SysTick_IRQ 1 */
+
+  /* add user code end SysTick_IRQ 1 */
+}
+
+/**
+  * @brief  this function handles ADC1 & Comparator handler.
+  * @param  none
+  * @retval none
+  */
+void ADC1_CMP_IRQHandler(void)
+{
+  /* add user code begin ADC1_CMP_IRQ 0 */
+
+  /* add user code end ADC1_CMP_IRQ 0 */
+
+  if(adc_interrupt_flag_get(ADC1, ADC_PCCE_FLAG) != RESET)
+  {
+    /* add user code begin ADC1_ADC_PCCE_FLAG */
+    /* clear flag */
+    adc_flag_clear(ADC1, ADC_PCCE_FLAG);
+  //处理ADC1的中断事件
+
+    ADC_InjectedValues[0] = adc_preempt_conversion_data_get(ADC1, ADC_PREEMPT_CHANNEL_1); // A相电压
+    ADC_InjectedValues[1] = adc_preempt_conversion_data_get(ADC1, ADC_PREEMPT_CHANNEL_2); // B相电压
+    ADC_InjectedValues[2] = adc_preempt_conversion_data_get(ADC1, ADC_PREEMPT_CHANNEL_3); // C相电压
+    
+    /* add user code end ADC1_ADC_PCCE_FLAG */ 
+  }
+
+  /* add user code begin ADC1_CMP_IRQ 1 */
+
+  /* add user code end ADC1_CMP_IRQ 1 */
+}
+
+/**
+  * @brief  this function handles TMR1 brake overflow trigger and hall handler.
+  * @param  none
+  * @retval none
+  */
+void TMR1_BRK_OVF_TRG_HALL_IRQHandler(void)
+{
+  /* add user code begin TMR1_BRK_OVF_TRG_HALL_IRQ 0 */
+  /* add user code end TMR1_BRK_OVF_TRG_HALL_IRQ 0 */
+
+ /* overflow interrupt management */
+  if(tmr_interrupt_flag_get(TMR1, TMR_OVF_FLAG) != RESET)
+  {
+    /* add user code begin TMR1_TMR_OVF_FLAG */
+    /* clear flag */
+    tmr_flag_clear(TMR1, TMR_OVF_FLAG);
+  //处理TMR1的溢出中断事件
+
+    // 触发ADC采样:软件触发注入 (抢占) 通道转换
+    adc_preempt_software_trigger_enable(ADC1, TRUE);
+
+    //电机控制主循环
+    SguanESC_High_Loop();
+    // 电调状态机处理函数
+    SguanESC_Low_Loop();
+
+    /* add user code end TMR1_TMR_OVF_FLAG */
+  }
+
+  /* add user code begin TMR1_BRK_OVF_TRG_HALL_IRQ 1 */
+
+  /* add user code end TMR1_BRK_OVF_TRG_HALL_IRQ 1 */
+}
+
+/**
+  * @brief  this function handles USART1 handler.
+  * @param  none
+  * @retval none
+  */
+void USART1_IRQHandler(void)
+{
+  /* add user code begin USART1_IRQ 0 */
+  if(usart_interrupt_flag_get(USART1, USART_IDLEF_FLAG) != RESET) //空闲中断跳转标志位
+  {
+    //AT32空闲标志必须读STS再读DT来清除，usart_flag_clear无效
+    //usart_flag_clear(USART1, USART_IDLEF_FLAG);
+    // 手动volatile读取，杜绝编译器O2/O3优化把读寄存器删掉
+        __IO uint16_t temp;
+        temp = USART1->sts;
+        temp = USART1->dt;
+        (void)temp;
+
+        //计算实际收到字节数：BUF_LEN初始化为缓冲区总长，dma搬运一个数据dtcnt-1，所以BUF_LEN - dtcnt就是实际接收长度
+        uint16_t rx_len = BUF_LEN - dma_data_number_get(DMA1_CHANNEL3);
+
+        if(rx_len > 0)
+        {// 这里等价HAL的HAL_UARTEx_RxEventCallback回调:IDLE串口空闲中断 + DMA
+            memcpy(Sguan_PrintfBuff, usart1_rx_buf, rx_len);
+            SguanESC_Printf_Loop(Sguan_PrintfBuff, rx_len);
+            rx_len = 0; //清零接收长度，准备下一轮接收
+        }
+
+        //重启DMA接收，下一轮等待数据
+        //usart_interrupt_enable(USART1, USART_IDLE_INT, TRUE); //打开空闲中断,一次就行
+        dma_reset(DMA1_CHANNEL3); //重置RX DMA通道，准备接收数据
+        dma_data_number_set(DMA1_CHANNEL3, BUF_LEN); //设置DMA通道数据长度
+        dma_channel_enable(DMA1_CHANNEL3, TRUE); //启动DMA接收
+        /* add user code start USART1_IRQ 0 */
+  }
+  /* add user code end USART1_IRQ 0 */
+
+  /* add user code begin USART1_IRQ 1 */
+
+  /* add user code end USART1_IRQ 1 */
+}
+
+/* add user code begin 1 */
+int __io_putchar(int ch)
+{ 
+    usart_data_transmit(USART1, (uint16_t)ch);
+    return ch;
+}
+
+int _write(int file, char *ptr, int len)
+{
+    (void)file; // 忽略文件描述符
+    for(int i=0;i<len;i++)
+    {
+        __io_putchar(*ptr++);
+    }
+    return len;
+}
+
+
+/* add user code end 1 */

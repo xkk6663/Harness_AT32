@@ -1,0 +1,11 @@
+{
+  "projectName": "AT32F421G8U7_WorkBench",
+  "chip": "AT32F421G8U7",
+  "series": "AT32F421",
+  "productLine": "Value line",
+  "flash": "64KB+4KB",
+  "sram": "16KB",
+  "frequency": "120MHz",
+  "core": "M4",
+  "package": "LQFP48"
+}

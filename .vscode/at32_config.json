@@ -1,0 +1,12 @@
+{
+  "programmer": "AT-Link/DAP Link",
+  "eraseMode": "sector",
+  "program": true,
+  "verify": true,
+  "resetAndRun": true,
+  "usbMode": "WinUSB",
+  "customCfgFiles": [
+    "scripts/target/at32f421xx.cfg"
+  ],
+  "customFlmFiles": []
+}
