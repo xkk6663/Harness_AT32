@@ -1,0 +1,32 @@
+# Step 6: CI 自动构建（GitHub Actions）
+# 行为: push / PR 触发 → Ubuntu 装 ARM 工具链 → cmake 配置(PATH 工具链) → 构建 → 上传 elf 产物
+# 注意: TOOLCHAIN_DIR 置空走 toolchain 的 PATH 分支(本机才用显式锁定)
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ARM toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi cmake ninja-build
+
+      - name: Configure (PATH toolchain)
+        run: cmake --preset Debug -DTOOLCHAIN_DIR=
+
+      - name: Build
+        run: cmake --build build/Debug
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-elf
+          path: build/Debug/AT32F421G8U7_WorkBench.elf

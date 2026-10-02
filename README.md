@@ -54,7 +54,7 @@ powershell -ExecutionPolicy Bypass -File tools\flash.ps1
 - [x] Step 0 基线 + .gitignore
 - [x] Step 1 命令行构建（`tools/build.ps1`）
 - [x] Step 2 命令行烧录（`tools/flash.ps1`，DAPLink HID 后端）
-- [ ] Step 3 GDB 命令行调试
-- [ ] Step 4 自建 launch.json / tasks.json
-- [ ] Step 5 环境统一（单构建目录 / 单 GCC / clangd 校准）
-- [ ] Step 6 coredump + CI
+- [x] Step 3 GDB 命令行调试（`tools/debug.ps1`）
+- [x] Step 4 自建 launch.json / tasks.json（cortex-debug）
+- [x] Step 5 环境统一（单构建目录 / 显式锁编译器 / clangd）
+- [x] Step 6 coredump 崩溃定位（`crash/crash.c`）+ CI（`.github/workflows/build.yml`）

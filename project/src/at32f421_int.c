@@ -94,77 +94,11 @@ void NMI_Handler(void)
   * @param  none
   * @retval none
   */
-void HardFault_Handler(void)
-{
-  /* add user code begin HardFault_IRQ 0 */
+/* NOTE: HardFault/MemManage/BusFault/UsageFault 处理已由 crash/crash.c 接管
+ * (startup 向量表里的 WEAK 符号被 crash.c 的强符号覆盖, 崩溃时保存现场到
+ * g_hardfault 并死循环)。ATWP 重新生成本文件后会恢复以下 4 个函数,
+ * 需删除(见 docs/学习路线.md Step 6 注意事项)。 */
 
-  /* add user code end HardFault_IRQ 0 */
-  /* go to infinite loop when hard fault exception occurs */
-  while (1)
-  {
-    /* add user code begin W1_HardFault_IRQ 0 */
-
-    /* add user code end W1_HardFault_IRQ 0 */
-  }
-}
-
-
-/**
-  * @brief  this function handles memory manage exception.
-  * @param  none
-  * @retval none
-  */
-void MemManage_Handler(void)
-{
-  /* add user code begin MemoryManagement_IRQ 0 */
-
-  /* add user code end MemoryManagement_IRQ 0 */
-  /* go to infinite loop when memory manage exception occurs */
-  while (1)
-  {
-    /* add user code begin W1_MemoryManagement_IRQ 0 */
-
-    /* add user code end W1_MemoryManagement_IRQ 0 */
-  }
-}
-
-/**
-  * @brief  this function handles bus fault exception.
-  * @param  none
-  * @retval none
-  */
-void BusFault_Handler(void)
-{
-  /* add user code begin BusFault_IRQ 0 */
-
-  /* add user code end BusFault_IRQ 0 */
-  /* go to infinite loop when bus fault exception occurs */
-  while (1)
-  {
-    /* add user code begin W1_BusFault_IRQ 0 */
-
-    /* add user code end W1_BusFault_IRQ 0 */
-  }
-}
-
-/**
-  * @brief  this function handles usage fault exception.
-  * @param  none
-  * @retval none
-  */
-void UsageFault_Handler(void)
-{
-  /* add user code begin UsageFault_IRQ 0 */
-
-  /* add user code end UsageFault_IRQ 0 */
-  /* go to infinite loop when usage fault exception occurs */
-  while (1)
-  {
-    /* add user code begin W1_UsageFault_IRQ 0 */
-
-    /* add user code end W1_UsageFault_IRQ 0 */
-  }
-}
 
 /**
   * @brief  this function handles debug monitor exception.

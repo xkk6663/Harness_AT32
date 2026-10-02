@@ -7,7 +7,7 @@ set(CMAKE_CXX_COMPILER_ID GNU)
 
 # 编译器定位: 默认依赖 PATH; CMakePresets 设 TOOLCHAIN_DIR 则显式锁定(可复现)
 # 统一工具链: GNU-tools-for-STM32 13.3.1 (与 GDB 同源)
-if(DEFINED TOOLCHAIN_DIR)
+if(TOOLCHAIN_DIR)  # 非空才显式锁定; 空值(如 CI 覆盖)回退 PATH
     set(TOOLCHAIN_PREFIX                "${TOOLCHAIN_DIR}/arm-none-eabi-")
     if(WIN32)
         set(TOOLCHAIN_EXE_SUFFIX        ".exe")
