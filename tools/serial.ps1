@@ -13,6 +13,11 @@ param(
     [string]$LogFile = ""
 )
 
+$Project = Split-Path $PSScriptRoot -Parent
+if ($LogFile -eq "") { $LogFile = Join-Path $Project "logs\serial.log" }
+New-Item -ItemType Directory -Force (Split-Path $LogFile) | Out-Null
+Write-Host "串口日志落盘: $LogFile"
+
 function Find-SerialPort {
     $ports = @([System.IO.Ports.SerialPort]::GetPortNames())
     if ($ports.Count -eq 0) { return $null }

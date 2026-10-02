@@ -15,3 +15,6 @@ Thumbs.db
 
 # 日志
 *.log
+
+# dashboard 自检截图产物
+tools/_shots/

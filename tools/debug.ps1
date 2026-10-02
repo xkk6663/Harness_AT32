@@ -15,7 +15,16 @@
 $OpenOcd = "$env:LOCALAPPDATA\at32-tools\OpenOCD\V2.0.9\bin\openocd.exe"
 $Project = Split-Path $PSScriptRoot -Parent
 
+# 输出落盘（dashboard 驾驶舱读取）
+$LogPath = Join-Path $Project "logs\debug.log"
+New-Item -ItemType Directory -Force (Split-Path $LogPath) | Out-Null
+Start-Transcript -Path $LogPath -Append -Force | Out-Null
+
 if (-not (Test-Path $OpenOcd)) { Write-Error "找不到 OpenOCD: $OpenOcd"; exit 1 }
 
-Write-Host "===== OpenOCD GDB server: :3333 (Ctrl+C 退出) ====="
-& $OpenOcd -f (Join-Path $Project "openocd\interface\cmsis-dap.cfg") -f (Join-Path $Project "openocd\target\at32f421xx.cfg")
+try {
+    Write-Host "===== OpenOCD GDB server: :3333 (Ctrl+C 退出) ====="
+    & $OpenOcd -f (Join-Path $Project "openocd\interface\cmsis-dap.cfg") -f (Join-Path $Project "openocd\target\at32f421xx.cfg")
+} finally {
+    Stop-Transcript | Out-Null
+}

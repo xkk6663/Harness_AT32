@@ -16,6 +16,7 @@
 - 构建 `tools/build.ps1`、烧录 `tools/flash.ps1`、调试 `tools/debug.ps1`、串口 `tools/serial.ps1`
 - 所有操作在终端可见、可记录、可回放 → AI（或 CI）可以端到端复现每一步，无需图形界面
 - 调试后端 = 开源 cortex-debug + OpenOCD，配置全在 `.vscode/` 且已进 Git
+- **可视化驾驶舱** `tools/dashboard.ps1`：编译/烧录/调试/串口日志四路输出实时汇到一个网页，开发过程一目了然
 
 ### 3. 闭环调试能力（编译 → 烧录 → 日志 → 崩溃现场）
 | 环节 | 工具 | 能力 |
@@ -46,10 +47,14 @@ AT32F421G8U7_WorkBench/
 │   └── target/at32f421xx.cfg     # 芯片配置（SWD / Cortex-M4）
 ├── svd/AT32F421xx_v2.svd         # 外设寄存器描述（调试用）
 ├── tools/
-│   ├── build.ps1                 # 构建入口
-│   ├── flash.ps1                 # 烧录入口（自动检测固件 + TCL 路径转义）
-│   ├── debug.ps1                 # OpenOCD GDB server 入口（:3333）
-│   └── serial.ps1                # 串口监视器（自动探测 + 时间戳 + 落盘）
+│   ├── build.ps1                 # 构建入口（输出落盘 logs/build.log）
+│   ├── flash.ps1                 # 烧录入口（输出落盘 logs/flash.log）
+│   ├── debug.ps1                 # OpenOCD GDB server 入口（输出落盘 logs/debug.log）
+│   ├── serial.ps1                # 串口监视器（自动探测 + 时间戳 + 默认落盘 logs/serial.log）
+│   ├── dashboard.ps1             # 驾驶舱启动器（起服务 + 开浏览器）
+│   ├── dashboard_server.ps1      # 驾驶舱数据服务（HttpListener，127.0.0.1 安全绑定）
+│   └── dashboard.html            # 驾驶舱前端（四路日志实时面板 + 全局状态）
+├── logs/                         # 工具链输出日志（git 忽略，dashboard 数据源）
 ├── docs/                         # 学习路线 / 踩坑指南 / 经验总结 / cortex-debug 教程
 ├── .github/workflows/build.yml   # CI：push 自动构建 + 符号校验 + 产物上传
 ├── startup_at32f421.s            # 启动文件
@@ -72,7 +77,18 @@ pwsh -File tools\serial.ps1 -Port COM10          # 或 -Port 自动探测
 pwsh -File tools\debug.ps1
 arm-none-eabi-gdb build/Debug/AT32F421G8U7_WorkBench.elf
 (gdb) target remote :3333
+
+# 5. 可视化驾驶舱（四路日志实时面板，自动开浏览器）
+pwsh -File tools\dashboard.ps1
 ```
+
+## 驾驶舱（可选，纯本地）
+
+`tools/dashboard.ps1` 一键起服务（`127.0.0.1:8080`）+ 打开浏览器：
+- **四个实时面板**：编译 / 烧录 / 调试 / 串口日志，数据来自 `logs/` 下各脚本的落盘输出（2.5s 轮询）
+- **全局状态栏**：openocd / gdb 进程占用、最新心跳（tick / high_loop / ADC）、elf 大小与时间
+- 服务离线时面板自动降级为空态提示；关服务后所有按钮失效为纯展示
+- 停止服务：`Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" | Where-Object { $_.CommandLine -like '*dashboard_server*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`
 
 前置要求：AT32 插件已安装（提供 `%LOCALAPPDATA%\at32-tools` 的 cmake/ninja/OpenOCD），
 `arm-none-eabi-gcc` 在 PATH 或 `TOOLCHAIN_DIR` 指定（本机 `C:\DevEnv\GNU-tools-for-STM32`）。
@@ -116,4 +132,5 @@ arm-none-eabi-gdb build/Debug/AT32F421G8U7_WorkBench.elf
 
 - [x] Step 0~6：构建 / 烧录 / GDB / cortex-debug / 环境统一 / coredump+CI 全完成
 - [x] Step 7：串口日志闭环（log 模块 + 心跳 + 崩溃串口输出 + serial.ps1）+ pwsh 统一
+- [x] Step 8：可视化驾驶舱（四路日志落盘 logs/ + dashboard 服务 + 实时面板）
 - [x] 全链路脚本化、CI 化、可被 AI 端到端操作

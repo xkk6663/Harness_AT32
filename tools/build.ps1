@@ -13,6 +13,11 @@ param(
 
 $Project = Split-Path $PSScriptRoot -Parent
 
+# 输出落盘（dashboard 驾驶舱读取）
+$LogPath = Join-Path $Project "logs\build.log"
+New-Item -ItemType Directory -Force (Split-Path $LogPath) | Out-Null
+Start-Transcript -Path $LogPath -Append -Force | Out-Null
+
 # 确保 at32-tools 的 cmake/ninja 可用（与插件同款，跨机器行为一致）
 $env:PATH = "$env:LOCALAPPDATA\at32-tools\cmake\V3.28.1\bin;$env:LOCALAPPDATA\at32-tools\ninja\V1.11.1;" + $env:PATH
 
@@ -29,4 +34,5 @@ try {
     Write-Host "===== 构建成功: build/$Preset/AT32F421G8U7_WorkBench.elf ====="
 } finally {
     Pop-Location
+    Stop-Transcript | Out-Null
 }

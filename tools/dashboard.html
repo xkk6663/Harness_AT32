@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AT32 工具链驾驶舱</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='4' fill='%230d1117'/%3E%3Cpath d='M7 6h10M7 10h6M7 14h10M7 18h6' stroke='%233fb950' stroke-width='2' stroke-linecap='round'/%3E%3Ccircle cx='18' cy='16' r='2' fill='%2358a6ff'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0d1117; --panel:#161b22; --panel2:#1c2128; --border:#30363d;
+  --text:#e6edf3; --dim:#8b949e; --green:#3fb950; --red:#f85149; --yellow:#d29922; --blue:#58a6ff; --cyan:#39c5cf;
+  --mono:ui-monospace,SFMono-Regular,Consolas,"JetBrains Mono","Cascadia Mono",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:14px;line-height:1.5}
+body{padding:14px 16px 40px}
+/* ===== 顶栏 ===== */
+.topbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 24px;padding:12px 16px;background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:14px}
+.brand{font-size:16px;font-weight:700;letter-spacing:.5px;white-space:nowrap}
+.brand .chip{color:var(--cyan);font-weight:400;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:2px}
+.stat{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--dim);white-space:nowrap}
+.stat b{color:var(--text);font-weight:600}
+.led{width:9px;height:9px;border-radius:50%;background:#30363d;flex:none}
+.led.on{background:var(--green);box-shadow:0 0 6px var(--green)}
+.led.busy{background:var(--blue);box-shadow:0 0 6px var(--blue)}
+.led.off{background:var(--red);box-shadow:0 0 6px var(--red)}
+.led.yellow{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
+.svc{font-size:12.5px;color:var(--cyan)}
+/* ===== 面板栅格 ===== */
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.panel{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;min-height:260px}
+.panel.serial{grid-column:span 1}
+.phead{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--panel2);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.pname{font-weight:700;font-size:13px;letter-spacing:.5px}
+.pname .sub{color:var(--dim);font-weight:400;font-size:11px;margin-left:4px}
+.phead .spacer{flex:1}
+.phead .meta{font-size:11px;color:var(--dim)}
+.pbtns{display:flex;gap:4px}
+.pbtns button{background:transparent;border:1px solid var(--border);color:var(--dim);font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer}
+.pbtns button:hover{color:var(--text);border-color:var(--blue)}
+.pbody{flex:1;overflow-y:auto;padding:8px 12px;font-size:12.5px;min-height:200px;max-height:480px}
+.line{white-space:pre-wrap;word-break:break-all;padding:0 2px;border-radius:2px;animation:none}
+.line.fresh{background:#1f6feb22}
+.line .t{color:var(--dim)}
+.line.l-blue{color:var(--blue)}
+.line.l-red{color:var(--red);background:#f8514914;font-weight:600}
+.line.l-yellow{color:var(--yellow)}
+.line.l-green{color:var(--green)}
+.line.l-crash{background:#f8514922;color:#ff7b72;font-weight:700;border-left:3px solid var(--red);padding-left:6px;margin:4px 0}
+.empty{color:var(--dim);font-style:italic;padding:12px 4px}
+/* 串口面板的心跳行突出 */
+.heartbeat{color:#c9d1d9}
+.heartbeat .num{color:var(--cyan)}
+/* ===== 响应式 ===== */
+@media(max-width:900px){ .grid{grid-template-columns:1fr} .panel.serial{grid-column:span 1} }
+@media(prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">AT32 工具链驾驶舱<span class="chip">build · flash · debug · serial</span></div>
+  <div class="stat"><span class="led" id="ledSvc"></span>服务 <b id="svcState">检测中…</b></div>
+  <div class="stat"><span class="led" id="ledOcd"></span>openocd <b id="pOcd">–</b></div>
+  <div class="stat"><span class="led" id="ledGdb"></span>gdb <b id="pGdb">–</b></div>
+  <div class="stat"><span class="led" id="ledTick"></span>tick <b id="sTick">–</b></div>
+  <div class="stat"><span class="led" id="ledLoop"></span>high_loop <b id="sLoop">–</b></div>
+  <div class="stat"><span class="led" id="ledElf"></span>elf <b id="sElf">–</b></div>
+  <div class="stat svc" id="srvTime">–</div>
+</header>
+
+<main class="grid">
+  <section class="panel" id="panel-build">
+    <div class="phead"><span class="led" id="ledBuild"></span><span class="pname">编译<span class="sub">cmake+ninja+gcc</span></span><span class="spacer"></span><span class="meta" id="metaBuild">–</span><span class="pbtns"><button onclick="clearPanel('build')">清空</button></span></div>
+    <div class="pbody" id="body-build"><div class="empty">等待构建日志…（运行 tools\build.ps1）</div></div>
+  </section>
+
+  <section class="panel" id="panel-flash">
+    <div class="phead"><span class="led" id="ledFlash"></span><span class="pname">烧录<span class="sub">openocd</span></span><span class="spacer"></span><span class="meta" id="metaFlash">–</span><span class="pbtns"><button onclick="clearPanel('flash')">清空</button></span></div>
+    <div class="pbody" id="body-flash"><div class="empty">等待烧录日志…（运行 tools\flash.ps1）</div></div>
+  </section>
+
+  <section class="panel" id="panel-debug">
+    <div class="phead"><span class="led" id="ledDebug"></span><span class="pname">调试<span class="sub">openocd gdb server</span></span><span class="spacer"></span><span class="meta" id="metaDebug">–</span><span class="pbtns"><button onclick="clearPanel('debug')">清空</button></span></div>
+    <div class="pbody" id="body-debug"><div class="empty">等待调试日志…（运行 tools\debug.ps1）</div></div>
+  </section>
+
+  <section class="panel serial" id="panel-serial">
+    <div class="phead"><span class="led" id="ledSerial"></span><span class="pname">串口日志<span class="sub">USART1 @115200</span></span><span class="spacer"></span><span class="meta" id="metaSerial">–</span><span class="pbtns"><button onclick="clearPanel('serial')">清空</button></span></div>
+    <div class="pbody" id="body-serial"><div class="empty">等待串口数据…（运行 tools\serial.ps1）</div></div>
+  </section>
+</main>
+
+<script>
+'use strict';
+var PANELS = ['build','flash','debug','serial'];
+var LIMIT = {build:120, flash:80, debug:120, serial:40};
+var lastLines = {}; PANELS.forEach(function(n){ lastLines[n] = []; });
+var offlineShown = false;
+
+function el(id){ return document.getElementById(id); }
+
+function esc(s){
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function classify(name, line){
+  if (name === 'serial') {
+    if (line.indexOf('CRASH') >= 0) return 'l-crash';
+    if (/^\[E\]/.test(line)) return 'l-red';
+    if (/^\[W\]/.test(line)) return 'l-yellow';
+    if (/^\[I\]/.test(line)) return 'heartbeat';
+    return '';
+  }
+  if (line.indexOf('CRASH') >= 0) return 'l-crash';
+  if (/\[E\]|error|Error|失败/.test(line)) return 'l-red';
+  if (/\[W\]|警告|warn/i.test(line)) return 'l-yellow';
+  if (/^=====/.test(line)) return 'l-blue';
+  return '';
+}
+
+function renderPanel(name, lines){
+  var body = el('body-' + name);
+  var prev = lastLines[name];
+  var newCount = 0;
+  var out = [];
+  var start = Math.max(0, lines.length - LIMIT[name]);
+  for (var i = start; i < lines.length; i++){
+    var raw = lines[i];
+    if (!raw || /^\*+$/.test(raw) || raw.indexOf('PowerShell transcript') >= 0) continue;
+    var fresh = prev.indexOf(raw) < 0;
+    if (fresh && i >= lines.length - 8) newCount++;
+    var cls = classify(name, raw);
+    var html = '<div class="line ' + cls + (fresh ? ' fresh' : '') + '">' + esc(raw) + '</div>';
+    out.push(html);
+  }
+  body.innerHTML = out.join('');
+  lastLines[name] = lines.slice(-200);
+  var led = el('led' + name.charAt(0).toUpperCase() + name.slice(1));
+  led.className = 'led ' + (newCount > 0 ? 'on' : (lines.length ? 'busy' : ''));
+  el('meta' + name.charAt(0).toUpperCase() + name.slice(1)).textContent =
+    newCount > 0 ? ('+' + newCount + ' 新行 · ' + new Date().toLocaleTimeString()) : (lines.length ? lines.length + ' 行' : '无日志');
+  if (name === 'serial') body.scrollTop = body.scrollHeight;
+}
+
+function clearPanel(name){
+  el('body-' + name).innerHTML = '<div class="empty">已清空（本地视图）。等待新日志…</div>';
+  lastLines[name] = [];
+}
+
+function renderStatus(st){
+  el('sTick').textContent = st.heartbeat ? st.heartbeat.tick : '–';
+  el('sLoop').textContent = st.heartbeat ? st.heartbeat.highLoop : '–';
+  el('sElf').textContent = st.elf ? (st.elf.sizeBytes/1024).toFixed(1) + ' KB · ' + st.elf.modified : '无 elf';
+  el('srvTime').textContent = 'server ' + st.serverTime;
+  var ocd = st.processes.openocd, gdb = st.processes.gdb;
+  el('pOcd').textContent = ocd; el('ledOcd').className = 'led ' + (ocd > 0 ? 'busy' : '');
+  el('pGdb').textContent = gdb; el('ledGdb').className = 'led ' + (gdb > 0 ? 'busy' : '');
+  el('ledTick').className = 'led ' + (st.heartbeat ? 'on' : '');
+  el('ledLoop').className = 'led ' + (st.heartbeat ? 'on' : '');
+  el('ledElf').className = 'led ' + (st.elf ? 'on' : '');
+}
+
+function showOffline(){
+  el('ledSvc').className = 'led off';
+  el('svcState').textContent = '离线（运行 tools\dashboard.ps1）';
+  if (!offlineShown) {
+    PANELS.forEach(function(n){
+      el('body-' + n).innerHTML = '<div class="empty">服务离线 — 在工程根目录运行: pwsh -File tools\\dashboard.ps1</div>';
+    });
+    offlineShown = true;
+  }
+}
+
+async function poll(){
+  var st, ok = true;
+  try {
+    var r = await fetch('/api/status', {cache:'no-store'});
+    st = await r.json();
+  } catch(e){ ok = false; }
+  if (!ok) { showOffline(); return; }
+  offlineShown = false;
+  el('ledSvc').className = 'led on';
+  el('svcState').textContent = '在线';
+  renderStatus(st);
+  for (var i = 0; i < PANELS.length; i++){
+    var name = PANELS[i];
+    try {
+      var rr = await fetch('/api/log?name=' + name + '&lines=300', {cache:'no-store'});
+      var data = await rr.json();
+      renderPanel(name, data.lines || []);
+    } catch(e){}
+  }
+}
+
+poll();
+setInterval(poll, 2500);
+</script>
+</body>
+</html>
