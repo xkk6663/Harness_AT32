@@ -37,6 +37,7 @@
 #include "stdio.h"
 #include "string.h"
 #include "SguanESC.h"
+#include "log.h"
 
 /* add user code end private includes */
 
@@ -126,12 +127,28 @@ int main(void)
   wk_tmr1_init();
 
   /* add user code begin 2 */
+  /* Step 7: 启动日志(串口闭环观察入口) */
+  log_init();
+  LOG_INFO("=== SguanESC 电调固件启动 ===");
+  LOG_INFO("tick=%lu | USART1 115200 8N1 就绪", (unsigned long)wk_timebase_get());
+  wk_delay_ms(100); /* 排空 DAPLink 虚拟串口缓冲, 避免启动 burst 溢出 */
 
   /* add user code end 2 */
 
   while(1)
   {
     /* add user code begin 3 */
+    /* Step 7: 主循环心跳(1s 一条; 高速环计数证明电机环在跑, 中断内不打日志) */
+    extern volatile uint32_t g_high_loop_cnt;
+    extern volatile uint32_t ADC_InjectedValues[4];
+    LOG_EVERY_MS(1000, LOG_LEVEL_INFO,
+                 "heartbeat tick=%lu high_loop=%lu adc[%lu,%lu,%lu,%lu]",
+                 (unsigned long)wk_timebase_get(),
+                 (unsigned long)g_high_loop_cnt,
+                 (unsigned long)ADC_InjectedValues[0],
+                 (unsigned long)ADC_InjectedValues[1],
+                 (unsigned long)ADC_InjectedValues[2],
+                 (unsigned long)ADC_InjectedValues[3]);
 
     /* add user code end 3 */
   }

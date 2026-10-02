@@ -58,6 +58,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/SguanESC/Sguan_MotorStatus.c
     ${CMAKE_CURRENT_LIST_DIR}/Hardware/Timer.c
     ${CMAKE_CURRENT_LIST_DIR}/crash/crash.c
+    ${CMAKE_CURRENT_LIST_DIR}/log/log.c
 )
 
 # Add include paths
@@ -67,6 +68,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/SguanESC
     ${CMAKE_CURRENT_LIST_DIR}/Hardware
     ${CMAKE_CURRENT_LIST_DIR}/crash
+    ${CMAKE_CURRENT_LIST_DIR}/log
 )
 
 # Add project symbols (macros)

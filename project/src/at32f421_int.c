@@ -34,6 +34,7 @@
 #include "at32f421_usart.h"
 #include "stdio.h"
 #include "string.h"
+#include "log.h"
 
 
 /* add user code end private includes */
@@ -66,6 +67,7 @@
 /* private user code ---------------------------------------------------------*/
 /* add user code begin 0 */
 volatile uint32_t ADC_InjectedValues[4] = {0};
+volatile uint32_t g_high_loop_cnt = 0; /* Step 7: 高速环执行计数(主循环心跳用) */
 /* add user code end 0 */
 
 /* external variables ---------------------------------------------------------*/
@@ -199,6 +201,9 @@ void TMR1_BRK_OVF_TRG_HALL_IRQHandler(void)
     // 电调状态机处理函数
     SguanESC_Low_Loop();
 
+    // Step 7: 高速环计数(日志输出移到主循环, 中断里不打日志避免阻塞, 且中断内 tick 失真)
+    g_high_loop_cnt++;
+
     /* add user code end TMR1_TMR_OVF_FLAG */
   }
 
@@ -232,6 +237,7 @@ void USART1_IRQHandler(void)
         {// 这里等价HAL的HAL_UARTEx_RxEventCallback回调:IDLE串口空闲中断 + DMA
             memcpy(Sguan_PrintfBuff, usart1_rx_buf, rx_len);
             SguanESC_Printf_Loop(Sguan_PrintfBuff, rx_len);
+            LOG_INFO("uart rx: %u bytes -> SguanESC_Printf_Loop", (unsigned)rx_len);
             rx_len = 0; //清零接收长度，准备下一轮接收
         }
 
@@ -252,6 +258,15 @@ void USART1_IRQHandler(void)
 /* add user code begin 1 */
 int __io_putchar(int ch)
 { 
+    /* 等待发送数据缓冲空(TDBE)再写, 否则连续 usart_data_transmit
+       会覆盖未发完的字节导致串口丢字节(日志只剩半截)。
+       加超时: 串口链路异常(如 DAPLink 卡住)时不能永久阻塞主程序,
+       超时则丢弃该字符继续运行(日志丢失可接受, 程序活着优先)。 */
+    volatile uint32_t timeout = 100000;
+    while(usart_flag_get(USART1, USART_TDBE_FLAG) == RESET)
+    {
+        if(--timeout == 0) { return ch; }
+    }
     usart_data_transmit(USART1, (uint16_t)ch);
     return ch;
 }

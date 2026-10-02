@@ -15,6 +15,7 @@
  *       (gdb) set $pc = 0xFFFFFFFF      触发一次 HardFault
  */
 #include <stdint.h>
+#include "log.h"
 
 /* SCB 故障寄存器 (Cortex-M4, SCB 基址 0xE000ED00) */
 #define SCB_CFSR    (*(volatile uint32_t *)0xE000ED28u) /* MMFSR+BFSR+UFSR 组合 */
@@ -71,6 +72,25 @@ void HardFault_HandlerC(uint32_t faulting_sp, uint32_t exc_return)
     g_hardfault.bfar  = SCB_BFAR;
     g_hardfault.faulting_sp = faulting_sp;
     g_hardfault.exc_return  = exc_return;
+
+    /* Step 7: 崩溃现场直接打到串口(不接 GDB 也能看到崩溃点) */
+    log_write(LOG_LEVEL_ERROR,
+              "*** CRASH *** pc=0x%08lX lr=0x%08lX faulting_sp=0x%08lX",
+              (unsigned long)g_hardfault.pc,
+              (unsigned long)g_hardfault.lr,
+              (unsigned long)g_hardfault.faulting_sp);
+    log_write(LOG_LEVEL_ERROR,
+              "  cfsr=0x%08lX hfsr=0x%08lX mmfar=0x%08lX bfar=0x%08lX",
+              (unsigned long)g_hardfault.cfsr,
+              (unsigned long)g_hardfault.hfsr,
+              (unsigned long)g_hardfault.mmfar,
+              (unsigned long)g_hardfault.bfar);
+    log_write(LOG_LEVEL_ERROR,
+              "  r0=0x%08lX r1=0x%08lX r2=0x%08lX r3=0x%08lX",
+              (unsigned long)g_hardfault.r0,
+              (unsigned long)g_hardfault.r1,
+              (unsigned long)g_hardfault.r2,
+              (unsigned long)g_hardfault.r3);
 
     /* 停住, 等 GDB attach 读现场; nop 防止 -O2 优化掉空循环 */
     while (1) {

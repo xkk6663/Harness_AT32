@@ -25,6 +25,10 @@ jobs:
       - name: Build
         run: cmake --build build/Debug
 
+      - name: Verify log/crash symbols in firmware
+        run: |
+          arm-none-eabi-nm build/Debug/AT32F421G8U7_WorkBench.elf | grep -E " (T|B) (log_write|log_init|g_hardfault|HardFault_Handler)$"
+
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
