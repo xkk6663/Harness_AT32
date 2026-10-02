@@ -2,27 +2,29 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "AT-Link/DAP Link",
+      "name": "AT32 Debug (OpenOCD)",
       "type": "cortex-debug",
       "request": "launch",
       "servertype": "openocd",
       "cwd": "${workspaceFolder}",
-      "executable": "c:/Users/xiao1/Desktop/AT32/AT32F421G8U7_WorkBench/build/AT32F421G8U7_WorkBench.elf",
-      "gdbPath": "${command:at32.get.gdb}",
-      "serverpath": "${command:at32.get.openocd}",
+      "executable": "${workspaceFolder}/build/Debug/AT32F421G8U7_WorkBench.elf",
+      "gdbPath": "C:/DevEnv/GNU-tools-for-STM32/bin/arm-none-eabi-gdb.exe",
+      "openocdPath": "${env:LOCALAPPDATA}/at32-tools/OpenOCD/V2.0.9/bin/openocd.exe",
       "configFiles": [
-        "c:/Users/xiao1/Desktop/AT32/AT32F421G8U7_WorkBench/.vscode/tmp_dap_interface.cfg",
-        "C:/Users/xiao1/AppData/Local/at32-tools/OpenOCD/V2.0.9/scripts/target/at32f421xx.cfg"
+        "openocd/interface/cmsis-dap.cfg",
+        "openocd/target/at32f421xx.cfg"
       ],
-      "svdFile": "${command:at32.get.svd}",
+      "svdFile": "${workspaceFolder}/svd/AT32F421xx_v2.svd",
       "runToEntryPoint": "main",
       "device": "AT32F421G8U7",
       "interface": "swd",
+      "preLaunchTask": "build",
       "liveWatch": {
         "enabled": true,
         "interval": 100,
         "expressions": []
-      }
+      },
+      "showDevDebugOutput": "none"
     }
   ]
 }
