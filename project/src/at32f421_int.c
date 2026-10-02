@@ -151,7 +151,8 @@ void ADC1_CMP_IRQHandler(void)
     /* clear flag */
     adc_flag_clear(ADC1, ADC_CCE_FLAG);
     //处理ADC1的常规组中断事件 常规组只有 1 个数据寄存器 DR
-    ADC_InjectedValues[3] = adc_ordinary_conversion_data_get(ADC1); // 母线电压
+    // Fix: 母线已并入注入组第4通道(JDR4), 此处不再写 [3](避免普通组被意外触发时覆盖母线值)
+    // ADC_InjectedValues[3] = adc_ordinary_conversion_data_get(ADC1); // 母线电压
 
 
     /* add user code end ADC1_ADC_CCE_FLAG */ 
@@ -166,6 +167,7 @@ void ADC1_CMP_IRQHandler(void)
     ADC_InjectedValues[0] = adc_preempt_conversion_data_get(ADC1, ADC_PREEMPT_CHANNEL_1); // A相电压
     ADC_InjectedValues[1] = adc_preempt_conversion_data_get(ADC1, ADC_PREEMPT_CHANNEL_2); // B相电压
     ADC_InjectedValues[2] = adc_preempt_conversion_data_get(ADC1, ADC_PREEMPT_CHANNEL_3); // C相电压
+    ADC_InjectedValues[3] = adc_preempt_conversion_data_get(ADC1, ADC_PREEMPT_CHANNEL_4); // 母线电压(并入注入组第4通道, 与三相同帧)  
     
     /* add user code end ADC1_ADC_PCCE_FLAG */ 
   }
@@ -193,8 +195,13 @@ void TMR1_BRK_OVF_TRG_HALL_IRQHandler(void)
     tmr_flag_clear(TMR1, TMR_OVF_FLAG);
   //处理TMR1的溢出中断事件
 
-    // 触发ADC采样:软件触发注入 (抢占) 通道转换
-    adc_preempt_software_trigger_enable(ADC1, TRUE);
+    // 触发ADC采样:注入组(三相+母线4通道)转换 —— 每4次中断(100us)触发一次,
+    // 长采样(41.5周期×4=216周期)需留足转换窗口, 25us 连续触发会转换不完/触发堆积
+    static uint8_t adc_div_cnt = 0;
+    if (++adc_div_cnt >= 4) {
+        adc_div_cnt = 0;
+        adc_preempt_software_trigger_enable(ADC1, TRUE);
+    }
 
     //电机控制主循环
     SguanESC_High_Loop();

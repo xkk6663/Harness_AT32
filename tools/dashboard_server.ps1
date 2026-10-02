@@ -26,6 +26,9 @@ function Send-Json($ctx, $obj) {
     $body = $obj | ConvertTo-Json -Depth 6 -Compress
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
     $ctx.Response.ContentType = "application/json; charset=utf-8"
+    # 禁止缓存: 前端轮询拿到的必须是实时数据(否则旧 HTML/旧日志停更)
+    $ctx.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    $ctx.Response.Headers["Pragma"] = "no-cache"
     $ctx.Response.ContentLength64 = $bytes.Length
     $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
 }
@@ -34,6 +37,9 @@ function Send-File($ctx, $path, $contentType) {
     if (-not (Test-Path $path)) { $ctx.Response.StatusCode = 404; return }
     $bytes = [System.IO.File]::ReadAllBytes($path)
     $ctx.Response.ContentType = $contentType
+    # 禁止缓存: HTML 每次重新验证, 改版后用户无需手动清缓存
+    $ctx.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    $ctx.Response.Headers["Pragma"] = "no-cache"
     $ctx.Response.ContentLength64 = $bytes.Length
     $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
 }

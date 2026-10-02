@@ -95,12 +95,21 @@ void wk_adc1_init(void)
   /* adc_preempt_conversionmode--------------------------------------------- */
   adc_preempt_channel_length_set(ADC1, 3);
 
-  adc_preempt_channel_set(ADC1, ADC_CHANNEL_0, 1, ADC_SAMPLETIME_1_5);
+  /* 三相电压注入组 + 母线(第4通道):
+     采样时间 41.5 周期 —— 1.5 周期对高阻分压源严重欠采样, 产生伪值(曾误判为 B 相电压偏高 49);
+     长采样读到真实电压(未接动力电时三相/母线均 ~0V, 与普通组 239.5 采样母线=0 一致)。
+     转换时间 216 周期, TMR1 中断每 4 次(100us)触发一次, 留足转换窗口。 */
+  adc_preempt_channel_length_set(ADC1, 4);
+
+  adc_preempt_channel_set(ADC1, ADC_CHANNEL_0, 1, ADC_SAMPLETIME_41_5);
   adc_preempt_offset_value_set(ADC1, ADC_PREEMPT_CHANNEL_1, 0x0);
-  adc_preempt_channel_set(ADC1, ADC_CHANNEL_4, 2, ADC_SAMPLETIME_1_5);
+  adc_preempt_channel_set(ADC1, ADC_CHANNEL_4, 2, ADC_SAMPLETIME_41_5);
   adc_preempt_offset_value_set(ADC1, ADC_PREEMPT_CHANNEL_2, 0x0);
-  adc_preempt_channel_set(ADC1, ADC_CHANNEL_5, 3, ADC_SAMPLETIME_1_5);
+  adc_preempt_channel_set(ADC1, ADC_CHANNEL_5, 3, ADC_SAMPLETIME_41_5);
   adc_preempt_offset_value_set(ADC1, ADC_PREEMPT_CHANNEL_3, 0x0);
+  /* 母线电压并入注入组第4通道(PA1) */
+  adc_preempt_channel_set(ADC1, ADC_CHANNEL_1, 4, ADC_SAMPLETIME_41_5);
+  adc_preempt_offset_value_set(ADC1, ADC_PREEMPT_CHANNEL_4, 0x0);
 
   /* When "ADCx_PREEMPT_TRIG_SOFTWARE" is selected, user can only use software trigger. \
   The software trigger function is adc_preempt_software_trigger_enable(ADCx, TRUE); */

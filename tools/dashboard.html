@@ -211,6 +211,9 @@ async function poll(){
 function renderSerialLive(data){
   if (!data) return;
   var body = el('body-serial');
+  // 首次收到数据时清掉"等待串口数据"空态占位, 让数据从面板顶部开始
+  var empty = body.querySelector('.empty');
+  if (empty) { body.innerHTML = ''; }
   var lines = data.split(/\r?\n/);
   var html = '', cnt = 0;
   for (var i = 0; i < lines.length; i++){
