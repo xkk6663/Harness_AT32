@@ -13,8 +13,10 @@ build/
 Thumbs.db
 .DS_Store
 
-# 日志
+# 日志(运行日志一律不进版本库)
 *.log
+*.err
+logs/
 
 # dashboard 自检截图产物
 tools/_shots/

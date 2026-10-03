@@ -37,6 +37,7 @@
 #include "stdio.h"
 #include "string.h"
 #include "SguanESC.h"
+#include "User_PWMSpeed.h"
 #include "log.h"
 
 /* add user code end private includes */
@@ -58,6 +59,8 @@
 
 /* private variables ---------------------------------------------------------*/
 /* add user code begin private variables */
+/* 555 PWM 调速观测(定义于此, User_PWMSpeed.h 声明 extern) */
+volatile pwm_speed_t g_pwm_speed;
 
 /* add user code end private variables */
 
@@ -133,6 +136,10 @@ int main(void)
   LOG_INFO("tick=%lu | USART1 115200 8N1 就绪", (unsigned long)wk_timebase_get());
   wk_delay_ms(100); /* 排空 DAPLink 虚拟串口缓冲, 避免启动 burst 溢出 */
 
+  /* 555 PWM(PA2) 调速: TMR15 输入捕获初始化(零中断) */
+  User_PWMSpeed_Init();
+  LOG_INFO("PWMSpeed 就绪: PA2=TMR15_CH1 输入捕获 @120MHz (555 ~100kHz)");
+
   /* add user code end 2 */
 
   while(1)
@@ -142,17 +149,23 @@ int main(void)
     extern volatile uint32_t g_high_loop_cnt;
     extern volatile uint32_t ADC_InjectedValues[4];
     LOG_EVERY_MS(1000, LOG_LEVEL_INFO,
-                 "heartbeat tick=%lu high_loop=%lu adc[%lu,%lu,%lu,%lu]",
+                 "heartbeat tick=%lu high_loop=%lu adc[%lu,%lu,%lu,%lu] pwm[%u,%u,%u]",
                  (unsigned long)wk_timebase_get(),
                  (unsigned long)g_high_loop_cnt,
                  (unsigned long)ADC_InjectedValues[0],
                  (unsigned long)ADC_InjectedValues[1],
                  (unsigned long)ADC_InjectedValues[2],
-                 (unsigned long)ADC_InjectedValues[3]);
+                 (unsigned long)ADC_InjectedValues[3],
+                 g_pwm_speed.valid,
+                 (unsigned int)(g_pwm_speed.duty * 100.0f + 0.5f),
+                 (unsigned int)(g_pwm_speed.freq_khz + 0.5f));
 
     /* Fix: 挂电机库主循环入口(此前缺失, 导致 User_Initial_Init 从未执行、
        串口 IDLE 中断未开、RX 协议不工作、遥测帧不发送) */
     SguanESC_main_Loop();
+
+    /* 555 PWM(PA2) 调速: 读占空比 → 启停/目标电压(主循环低速, 无中断) */
+    User_PWMSpeed_Loop();
 
     /* add user code end 3 */
   }

@@ -30,6 +30,7 @@
 /* private includes ----------------------------------------------------------*/
 /* add user code begin private includes */
 #include "SguanESC.h"
+#include "wk_tmr15.h"
 #include <at32f421_wk_config.h>
 #include "at32f421_usart.h"
 #include "stdio.h"
@@ -210,6 +211,9 @@ void TMR1_BRK_OVF_TRG_HALL_IRQHandler(void)
 
     // Step 7: 高速环计数(日志输出移到主循环, 中断里不打日志避免阻塞, 且中断内 tick 失真)
     g_high_loop_cnt++;
+
+    // 555 PWM(PA2) 捕获快照: 40kHz 采样率 >> PWM 周期, 主循环结算用
+    wk_tmr15_isr();
 
     /* add user code end TMR1_TMR_OVF_FLAG */
   }

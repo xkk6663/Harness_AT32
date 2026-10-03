@@ -59,6 +59,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/Hardware/Timer.c
     ${CMAKE_CURRENT_LIST_DIR}/crash/crash.c
     ${CMAKE_CURRENT_LIST_DIR}/log/log.c
+    ${CMAKE_CURRENT_LIST_DIR}/project/src/wk_tmr15.c
 )
 
 # Add include paths
