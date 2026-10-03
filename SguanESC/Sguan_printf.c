@@ -153,6 +153,11 @@ static float Get_Data_Fast(uint8_t start_idx){
 
 /* ==================== 通用 Loop 函数 =================== */
 
+/* 遥测发送开关: 0=禁用(主循环不再每轮发送原始 PRINTF_STRUCT,
+   避免未填充 fdata 全 0x00 形成 NUL 洪流污染串口/拖慢主循环);
+   1=启用(每轮发送, 需先在 User_UserTX 填充 Sguan.txdata.fdata[]) */
+#define SGUAN_TX_TELEMETRY_EN  0
+
 void Printf_TX_Init(PRINTF_STRUCT *str){
     str->__tail[0] = 0x00;
     str->__tail[1] = 0x00;
@@ -161,8 +166,10 @@ void Printf_TX_Init(PRINTF_STRUCT *str){
 }
 
 void Printf_TX_Loop(PRINTF_STRUCT *str){
-    User_UserTX();
+    User_UserTX();   /* 用户填充接口(当前全注释=空, 无遥测需求) */
+#if SGUAN_TX_TELEMETRY_EN
     User_CorrespondSet((uint8_t *)str, sizeof(PRINTF_STRUCT));
+#endif
 }
 
 void Printf_RX_Init(void){

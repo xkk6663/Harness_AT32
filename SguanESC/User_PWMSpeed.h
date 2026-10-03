@@ -26,6 +26,11 @@
 /* 占空比低于此值 → 停机(555 电位器旋到最低时让电机停下) */
 #define PWM_SPEED_STOP_DUTY   0.05f
 
+/* 电机库操作节流: 每 10ms 才执行一次 Func_Start/Stop/Set_Ubus
+   (恢复电机库 ~100Hz 设计节奏; 遥测禁用后主循环变快,
+    若每轮高频调用状态机操作会把电机库状态机拖死——实测上电 ~75s 死机) */
+#define PWM_SPEED_ACT_PERIOD_MS  10
+
 typedef struct {
   uint8_t  valid;       /* 输入信号有效(周期在合法窗口内) */
   uint16_t period_cnt;  /* 周期计数 @120MHz */
@@ -61,6 +66,8 @@ static inline void User_PWMSpeed_Loop(void)
 {
   uint16_t period = 0, pulse = 0;
   static uint32_t s_no_sig_cnt = 0;
+  static uint8_t  s_motor_running = 0;  /* 业务层视角电机运行标志(仅状态翻转时动作) */
+  static uint32_t s_last_act_ms = 0;    /* 电机库操作节流时间戳 */
 
   if (wk_tmr15_pwm_measure(&period, &pulse))
   {
@@ -74,17 +81,31 @@ static inline void User_PWMSpeed_Loop(void)
     g_pwm_speed.freq_khz    = freq;
     s_no_sig_cnt = 0;
 
+    /* 电机库操作节流: 每 10ms 才动作一次(恢复 ~100Hz 设计节奏,
+       防遥测禁用后主循环变快 → 高频调用拖死电机库状态机) */
+    uint32_t now = wk_timebase_get();
+    if ((now - s_last_act_ms) < PWM_SPEED_ACT_PERIOD_MS)
+      return;
+    s_last_act_ms = now;
+
     if (duty < PWM_SPEED_STOP_DUTY)
     {
-      /* 电位器旋到最低: 缓停 */
-      Sguan.Func_Stop();
+      /* 电位器旋到最低: 缓停(仅运行→停止翻转时调用一次) */
+      if (s_motor_running)
+      {
+        Sguan.Func_Stop();
+        s_motor_running = 0;
+      }
       g_pwm_speed.target_ubus = 0.0f;
     }
     else
     {
-      /* 未运行(待机/初始化/空闲) → 启动; 运行中重复调 Start 无害会被状态机忽略 */
-      if (Sguan.status <= MOTOR_STATUS_IDLE)
+      /* 未运行 → 启动(仅停止→运行翻转时调用一次, 避免重复 Start) */
+      if (!s_motor_running)
+      {
         Sguan.Func_Start();
+        s_motor_running = 1;
+      }
 
       /* 电压开环: 目标电压 = 占空比 × 实际母线电压
          (未接动力电时 __Real_VBUS≈0 → 目标≈0, 接电后正常)

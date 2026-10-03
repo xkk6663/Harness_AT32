@@ -141,6 +141,8 @@ try {
                         $script:SerialTail = $parts[$parts.Count - 1]
                         for ($i = 0; $i -lt $parts.Count - 1; $i++) {
                             $l = $parts[$i].TrimEnd("`r")
+                            # 过滤控制字符(NUL/0x7F 等非可打印字节): 防固件遥测/杂散字节污染面板
+                            $l = $l -replace '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', ''
                             if ($l -ne "") { [void]$script:SerialBuf.Add($l) }
                         }
                         if ($script:SerialBuf.Count -gt 300) {
