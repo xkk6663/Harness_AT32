@@ -85,8 +85,23 @@ function Get-Status {
     }
 }
 
-# ---- 串口直连（服务端持有串口, 前端实时轮询）----
+# ---- 串口直连（服务端持有串口, 行缓冲后按"最近 N 行"供前端覆盖式刷新）----
 $script:Serial = $null
+$script:SerialBuf = New-Object System.Collections.Generic.List[string]   # 完整行缓冲(上限 300 行)
+$script:SerialTail = ""                                                  # 未换行的残尾(拼到下次)
+# 未显式指定串口时自动探测(DAPLink/CMSIS-DAP 优先, 其次常见 USB 串口)——COM 号会因 USB 重枚举变化
+if ($SerialPort -eq "") {
+    foreach ($c in @([System.IO.Ports.SerialPort]::GetPortNames())) {
+        try {
+            $dev = Get-CimInstance Win32_PnPEntity -ErrorAction Stop |
+                Where-Object { $_.Name -match "\($c\)" } | Select-Object -First 1
+            if ($dev -and $dev.Name -match 'DAPLink|CMSIS-DAP|CP210x|FTDI|CH340|USB Serial') {
+                $SerialPort = $c
+                break
+            }
+        } catch { }
+    }
+}
 if ($SerialPort -ne "") {
     try {
         $sp = New-Object System.IO.Ports.SerialPort($SerialPort, 115200, 'None', 8, 'One')
@@ -117,11 +132,25 @@ try {
                 Send-Json $ctx (Get-Status)
             } elseif ($path -eq "/api/serial") {
                 if ($script:Serial -ne $null) {
-                    $data = ""
-                    try { $data = $script:Serial.ReadExisting() } catch { }
-                    Send-Json $ctx @{ live = $true; port = $SerialPort; data = $data }
+                    # 读新数据 → 拼残尾 → 按行入缓冲(上限 300 行) → 返回最近 60 行(前端覆盖式刷新)
+                    $new = ""
+                    try { $new = $script:Serial.ReadExisting() } catch { }
+                    if ($new) {
+                        $text = $script:SerialTail + $new
+                        $parts = $text -split "`n"
+                        $script:SerialTail = $parts[$parts.Count - 1]
+                        for ($i = 0; $i -lt $parts.Count - 1; $i++) {
+                            $l = $parts[$i].TrimEnd("`r")
+                            if ($l -ne "") { [void]$script:SerialBuf.Add($l) }
+                        }
+                        if ($script:SerialBuf.Count -gt 300) {
+                            $script:SerialBuf.RemoveRange(0, $script:SerialBuf.Count - 300)
+                        }
+                    }
+                    $lines = @($script:SerialBuf | Select-Object -Last 60)
+                    Send-Json $ctx @{ live = $true; port = $SerialPort; lines = $lines }
                 } else {
-                    Send-Json $ctx @{ live = $false; data = "" }
+                    Send-Json $ctx @{ live = $false; lines = @() }
                 }
             } elseif ($path -eq "/api/log") {
                 $name = $ctx.Request.QueryString["name"]

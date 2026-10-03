@@ -93,7 +93,7 @@ body{padding:14px 16px 40px}
 <script>
 'use strict';
 var PANELS = ['build','flash','debug','serial'];
-var LIMIT = {build:120, flash:80, debug:120, serial:40};
+var LIMIT = {build:120, flash:80, debug:120, serial:60};
 var lastLines = {}; PANELS.forEach(function(n){ lastLines[n] = []; });
 var offlineShown = false;
 
@@ -190,7 +190,7 @@ async function poll(){
       try {
         var sr = await fetch('/api/serial', {cache:'no-store'});
         var sd = await sr.json();
-        if (sd.live) { renderSerialLive(sd.data); }
+        if (sd.live) { renderPanel('serial', sd.lines || []); }
         else {
           var rr2 = await fetch('/api/log?name=serial&lines=300', {cache:'no-store'});
           var d2 = await rr2.json();
@@ -207,33 +207,7 @@ async function poll(){
   }
 }
 
-// 串口实时模式: 服务端持有串口, 每次轮询追加新文本(流式)
-function renderSerialLive(data){
-  if (!data) return;
-  var body = el('body-serial');
-  // 首次收到数据时清掉"等待串口数据"空态占位, 让数据从面板顶部开始
-  var empty = body.querySelector('.empty');
-  if (empty) { body.innerHTML = ''; }
-  var lines = data.split(/\r?\n/);
-  var html = '', cnt = 0;
-  for (var i = 0; i < lines.length; i++){
-    var raw = lines[i];
-    if (!raw || !raw.trim()) continue;
-    var cls = classify('serial', raw);
-    html += '<div class="line ' + cls + ' fresh">' + esc(raw) + '</div>';
-    cnt++;
-  }
-  if (!html) return;
-  body.insertAdjacentHTML('beforeend', html);
-  var children = body.querySelectorAll('.line');
-  if (children.length > 200) {
-    for (var j = 0; j < children.length - 200; j++) children[j].remove();
-  }
-  body.scrollTop = body.scrollHeight;
-  el('metaSerial').textContent = '+' + cnt + ' 行 · ' + new Date().toLocaleTimeString();
-  el('ledSerial').className = 'led on';
-}
-
+// 串口面板已统一走 renderPanel 覆盖式刷新(服务端 /api/serial 返回最近 60 行, 每轮替换旧内容)
 poll();
 setInterval(poll, 2500);
 </script>
