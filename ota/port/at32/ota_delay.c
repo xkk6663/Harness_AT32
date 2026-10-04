@@ -27,7 +27,11 @@ void OtaDelay_Init(void)
     systick_clock_source_config(SYSTICK_CLOCK_SOURCE_AHBCLK_NODIV);
     SysTick->LOAD  = (uint32_t)((frequency / 1000) - 1UL);
     SysTick->VAL   = 0UL;
-    SysTick->CTRL  = SysTick_CTRL_TICKINT_Msk | SysTick_CTRL_ENABLE_Msk;
+    /* 坑(踩坑指南 §24): 必须 |= 保留 CLKSOURCE；= 直接赋值会把 CLKSOURCE 清 0,
+       SysTick 退化为 HCLK/8(15MHz) 时钟源, LOAD=119999 使中断周期 8ms,
+       2s 窗口变 16s、一切 SysTick 时基慢 8 倍。APP 侧 wk_timebase_init 是 |= 正确的。 */
+    SysTick->CTRL |= SysTick_CTRL_TICKINT_Msk |
+                    SysTick_CTRL_ENABLE_Msk;
 }
 
 void OtaDelay_Ms(uint32_t ms)

@@ -39,6 +39,7 @@
 #include "SguanESC.h"
 #include "User_PWMSpeed.h"
 #include "log.h"
+#include "ota_app_hook.h"
 
 /* add user code end private includes */
 
@@ -82,6 +83,10 @@ volatile pwm_speed_t g_pwm_speed;
 int main(void)
 {
   /* add user code begin 1 */
+  /* OTA: 向量表重定位到 APP 基址(0x08004800) —— 必须在任何外设/中断使用之前,
+     否则中断仍走 Bootloader 向量表(Bootloader 区已被擦除时直接跑飞)。
+     M4 直接写 SCB->VTOR 即可, 无需 NVIC_SetVectorTable 旧 API。 */
+  SCB->VTOR = 0x08004800u;
 
   /* add user code end 1 */
 
@@ -166,6 +171,9 @@ int main(void)
 
     /* 555 PWM(PA2) 调速: 读占空比 → 启停/目标电压(主循环低速, 无中断) */
     User_PWMSpeed_Loop();
+
+    /* OTA: 主循环响应 '!!!!!' 触发（停机保护链, 见 ota_app_hook.c） */
+    OtaAppHook_HandleTrigger();
 
     /* add user code end 3 */
   }

@@ -66,6 +66,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/crash/crash.c
     ${CMAKE_CURRENT_LIST_DIR}/log/log.c
     ${CMAKE_CURRENT_LIST_DIR}/project/src/wk_tmr15.c
+    ${CMAKE_CURRENT_LIST_DIR}/ota/port/at32/ota_app_hook.c
+    ${CMAKE_CURRENT_LIST_DIR}/ota/port/at32/ota_flash_hal.c
 )
 
 # Add include paths
@@ -76,6 +78,8 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/Hardware
     ${CMAKE_CURRENT_LIST_DIR}/crash
     ${CMAKE_CURRENT_LIST_DIR}/log
+    ${CMAKE_CURRENT_LIST_DIR}/ota/core
+    ${CMAKE_CURRENT_LIST_DIR}/ota/port/at32
 )
 
 # Add project symbols (macros)
@@ -88,4 +92,15 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     at32_workbench
 
     # Add user defined libraries
+    ota_core
+)
+
+# OTA: APP 固件 .bin 产物（flash.ps1 用 bin+显式地址烧录, 避免 openocd 对 elf
+#   擦除起点向下对齐破坏 Bootloader 区 —— M2 实测: program app.elf 从 0x08004000
+#   起擦, 覆盖 Bootloader 尾部 0x4000~0x47FF）
+set(APP_ELF_PATH $<TARGET_FILE:${CMAKE_PROJECT_NAME}>)
+add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_OBJCOPY} -O binary ${APP_ELF_PATH} ${CMAKE_PROJECT_NAME}.bin
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Generating ${CMAKE_PROJECT_NAME}.bin"
 )

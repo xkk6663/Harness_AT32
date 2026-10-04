@@ -12,7 +12,7 @@
 # 【关键】移除全局 -T（APP 链接脚本）——双 -T 会让两个 SECTIONS 合并,
 #   导致 .init_array/.data 等段布局异常, printf 内部跑飞（M1 实测实锤）。
 #   本目录 target 只链接 BOOT.ld。
-string(REPLACE "-T \"${CMAKE_SOURCE_DIR}/AT32F421x8_FLASH.ld\"" ""
+string(REPLACE "-T \"${CMAKE_SOURCE_DIR}/AT32F421x8_APP.ld\"" ""
        CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS}")
 
 set(BOOT_TARGET at32f421_boot)

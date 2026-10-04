@@ -36,6 +36,7 @@
 #include "stdio.h"
 #include "string.h"
 #include "log.h"
+#include "ota_app_hook.h"
 
 
 /* add user code end private includes */
@@ -246,6 +247,10 @@ void USART1_IRQHandler(void)
 
         if(rx_len > 0)
         {// 这里等价HAL的HAL_UARTEx_RxEventCallback回调:IDLE串口空闲中断 + DMA
+            /* OTA: '!' 触发扫描（每字节过一遍, 连续 '!' ≥5 置标志; 不干扰电机协议） */
+            for (uint16_t _i = 0; _i < rx_len; _i++) {
+                OtaAppHook_ScanChar((char)usart1_rx_buf[_i]);
+            }
             memcpy(Sguan_PrintfBuff, usart1_rx_buf, rx_len);
             SguanESC_Printf_Loop(Sguan_PrintfBuff, rx_len);
             LOG_INFO("uart rx: %u bytes -> SguanESC_Printf_Loop", (unsigned)rx_len);
@@ -254,7 +259,9 @@ void USART1_IRQHandler(void)
 
         //重启DMA接收，下一轮等待数据
         //usart_interrupt_enable(USART1, USART_IDLE_INT, TRUE); //打开空闲中断,一次就行
-        dma_reset(DMA1_CHANNEL3); //重置RX DMA通道，准备接收数据
+        //踩坑(踩坑指南 §20): dma_reset 会清掉 CH3 的 paddr/maddr/方向/宽度,
+        //   DMA 从错误地址搬 1 字节即停 —— 重启必须保留配置, 只关/开使能
+        dma_channel_enable(DMA1_CHANNEL3, FALSE);   // 关使能(保留 paddr/maddr 配置)
         dma_data_number_set(DMA1_CHANNEL3, BUF_LEN); //设置DMA通道数据长度
         dma_channel_enable(DMA1_CHANNEL3, TRUE); //启动DMA接收
         /* add user code start USART1_IRQ 0 */
