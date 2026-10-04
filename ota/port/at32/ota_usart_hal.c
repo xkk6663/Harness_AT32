@@ -52,8 +52,13 @@ static void ota_usart_gpio_init(void)
 
 static void ota_usart_dma_rx_start(void)
 {
-    dma_reset(DMA1_CHANNEL3);
-    dma_data_number_set(DMA1_CHANNEL3, OTA_RX_DMA_BUF_SIZE);
+    /* 注意: 不能 dma_reset() —— 它会把 paddr/maddr 和通道方向配置全部清零,
+     * 导致 DMA 从错误地址搬运 1 字节后停止（实测 dtcnt=1023 卡死）。
+     * 正确做法: 只重置计数并重新绑定源/目的地址, 再使能通道。 */
+    dma_channel_enable(DMA1_CHANNEL3, FALSE);
+    DMA1_CHANNEL3->dtcnt = OTA_RX_DMA_BUF_SIZE;
+    DMA1_CHANNEL3->paddr = (uint32_t)&USART1->dt;
+    DMA1_CHANNEL3->maddr = (uint32_t)ota_rx_dma_buf;
     dma_channel_enable(DMA1_CHANNEL3, TRUE);
 }
 

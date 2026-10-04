@@ -18,6 +18,7 @@
 #include "ota_transport.h"
 #include "ota_flash_hal.h"
 #include "ota_jump.h"
+#include "at32f421.h"
 
 /* ============================================================
  * 启动流程
@@ -121,6 +122,7 @@ void Boot_CheckState(void)
     case STATE_RUNNING:
         printf("\r\n=== Bootloader Ready ===\r\n");
         printf("Send \"!!!!!\" within 2s to enter upgrade mode...\r\n");
+        int upgrade_triggered = 0;
         for (int i = 0; i < 20; i++) {             /* 2 秒窗口, 等主机发 !!!!! */
             OtaDelay_Ms(100);
 
@@ -152,11 +154,14 @@ void Boot_CheckState(void)
                         g_Transport->read(&dummy);
                     }
                 }
+                upgrade_triggered = 1;
                 break;
             }
         }
-        printf("No upgrade request, jumping to APP...\r\n");
-        OtaJump_ToApp();
+        if (!upgrade_triggered) {
+            printf("No upgrade request, jumping to APP...\r\n");
+            OtaJump_ToApp();
+        }
         break;
     }
 

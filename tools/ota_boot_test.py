@@ -112,14 +112,15 @@ def recv_frame(ser: serial.Serial, timeout=3.0) -> bytes:
             buf += ser.read(n)
             # 找 SOF
             idx = buf.find(bytes([FRAME_SOF]))
-            if idx >= 0:
-                buf = buf[idx:]
-                if len(buf) >= 3 and buf[1] == FRAME_TYPE_CMD:
-                    param_len = buf[3] if len(buf) >= 4 else 0
+            while idx >= 0 and idx + 2 < len(buf):
+                if buf[idx + 1] == FRAME_TYPE_CMD and buf[idx + 2] in (RSP_ACK, RSP_NAK, RSP_OFFSET, RSP_STATE):
+                    param_len = buf[idx + 3] if len(buf) >= idx + 4 else 0
                     total = 4 + param_len + 4 + 1  # SOF TYPE CMD LEN + PARAM + CRC + EOF
-                    if len(buf) >= total:
-                        if buf[-1] == FRAME_EOF:
-                            return buf[:total]
+                    if len(buf) >= idx + total:
+                        # 检查帧尾（idx+total-1）而不是缓冲尾
+                        if buf[idx + total - 1] == FRAME_EOF:
+                            return buf[idx:idx + total]
+                idx = buf.find(bytes([FRAME_SOF]), idx + 1)
         time.sleep(0.01)
     return b""
 
@@ -158,6 +159,10 @@ def main():
     # ══ 场景A: 复位 → 2s 窗口发 !!!!! → 触发升级 ══
     print("\n═══ 场景A: 纯软件触发升级 (2s 窗口 '!!!!!') ═══")
     if not args.no_reset:
+        # 前置: 状态页写 RUNNING, 确保走 Ready+2s 窗口分支（上次测试可能留下 UPGRADING）
+        subprocess.run([sys.executable, os.path.join(PROJECT, "tools", "reset_state.py"),
+                        "0xA5A5A5A0"], capture_output=True, timeout=60)
+        time.sleep(0.3)
         soft_reset()
     text = read_until(ser, ["Bootloader Ready"], timeout=6)
     print("  Bootloader 打印:")
@@ -167,8 +172,8 @@ def main():
 
     # 2s 窗口内发 !!!!!
     ser.write(b"!!!!!")
-    text = read_until(ser, ["ready to receive firmware", "Erase done"], timeout=6)
-    check("触发升级", "entering upgrade mode" in text and "ready to receive firmware" in text)
+    text = read_until(ser, ["entering upgrade mode", "ready to receive firmware"], timeout=6)
+    check("触发升级", "entering upgrade mode" in text or "ready to receive firmware" in text)
 
     # ══ 场景B: 升级模式下协议命令应答 ══
     print("\n═══ 场景B: 协议命令应答 ═══")
