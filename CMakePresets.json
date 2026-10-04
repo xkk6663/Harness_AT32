@@ -8,7 +8,8 @@
             "binaryDir": "${sourceDir}/build/${presetName}",
             "toolchainFile": "${sourceDir}/cmake/gcc-arm-none-eabi.cmake",
             "cacheVariables": {
-                "TOOLCHAIN_DIR": "C:/DevEnv/GNU-tools-for-STM32/bin"
+                "TOOLCHAIN_DIR": "C:/DevEnv/GNU-tools-for-STM32/bin",
+                "CMAKE_MAKE_PROGRAM": "C:/Users/xiao1/AppData/Local/at32-tools/ninja/V1.11.1/ninja.exe"
             }
         },
         {

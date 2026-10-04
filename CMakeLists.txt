@@ -41,6 +41,9 @@ add_subdirectory(cmake/at32_workbench)
 # OTA 平台化核心库（纯 C 零芯片依赖，M1 起由 bootloader/app 链接）
 add_subdirectory(ota)
 
+# Bootloader target（独立链接脚本, FLASH 18KB 区）
+add_subdirectory(bootloader)
+
 # Link directories setup
 target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined library search paths
