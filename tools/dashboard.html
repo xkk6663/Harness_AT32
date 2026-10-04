@@ -27,7 +27,7 @@ body{padding:14px 16px 40px}
 .led.yellow{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
 .svc{font-size:12.5px;color:var(--cyan)}
 /* ===== 最后更新徽标(实时刷新指示) ===== */
-.upd{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--green);font-weight:600;background:#3fb9501a;border:1px solid #3fb95066;border-radius:4px;padding:2px 10px}
+.upd{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--green);font-weight:600;background:#3fb9501a;border:1px solid #3fb95066;border-radius:4px;padding:2px 10px;cursor:default}
 .upd .tval{color:var(--text);font-weight:700}
 .upd.stale{color:var(--red);background:#f8514914;border-color:#f8514955}
 .upd.stale .led{background:var(--red);box-shadow:0 0 6px var(--red)}
@@ -45,6 +45,11 @@ body{padding:14px 16px 40px}
 .pbtns{display:flex;gap:4px}
 .pbtns button{background:transparent;border:1px solid var(--border);color:var(--dim);font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer}
 .pbtns button:hover{color:var(--text);border-color:var(--blue)}
+.pbtns button.act{color:var(--blue);border-color:#58a6ff55}
+.pbtns button.act:hover{background:#58a6ff14;border-color:var(--blue)}
+.pbtns button:disabled{opacity:.55;cursor:not-allowed}
+.pbtns button:disabled:hover{border-color:var(--border);color:var(--dim);background:transparent}
+.pbtns button.act.on{color:var(--green);border-color:#3fb95066;background:#3fb9501a}
 .pbody{flex:1;overflow-y:auto;padding:8px 12px;font-size:12.5px;min-height:200px;max-height:480px}
 .line{white-space:pre-wrap;word-break:break-all;padding:0 2px;border-radius:2px;animation:none}
 .line.fresh{background:#1f6feb22;animation:lineFlash 1.2s ease-out}
@@ -59,6 +64,9 @@ body{padding:14px 16px 40px}
 /* 串口面板的心跳行突出 */
 .heartbeat{color:#c9d1d9}
 .heartbeat .num{color:var(--cyan)}
+/* 断开提示条 */
+.note{padding:4px 12px;font-size:11.5px;background:#f8514914;color:#ff7b72;border-bottom:1px solid var(--border);display:none}
+.note.show{display:block}
 /* ===== 响应式 ===== */
 @media(max-width:900px){ .grid{grid-template-columns:1fr} .panel.serial{grid-column:span 1} }
 @media(prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
@@ -73,28 +81,30 @@ body{padding:14px 16px 40px}
   <div class="stat"><span class="led" id="ledTick"></span>tick <b id="sTick">–</b></div>
   <div class="stat"><span class="led" id="ledLoop"></span>high_loop <b id="sLoop">–</b></div>
   <div class="stat"><span class="led" id="ledElf"></span>elf <b id="sElf">–</b></div>
+  <div class="upd" id="updBadge"><span class="led"></span>最后更新 <span class="tval" id="updTval">–</span></div>
   <div class="stat svc" id="srvTime">–</div>
 </header>
 
 <main class="grid">
   <section class="panel" id="panel-build">
-    <div class="phead"><span class="led" id="ledBuild"></span><span class="pname">编译<span class="sub">cmake+ninja+gcc</span></span><span class="spacer"></span><span class="meta" id="metaBuild">–</span><span class="pbtns"><button onclick="clearPanel('build')">清空</button></span></div>
-    <div class="pbody" id="body-build"><div class="empty">等待构建日志…（运行 tools\build.ps1）</div></div>
+    <div class="phead"><span class="led" id="ledBuild"></span><span class="pname">编译<span class="sub">cmake+ninja+gcc</span></span><span class="spacer"></span><span class="meta" id="metaBuild">–</span><span class="pbtns"><button class="act" id="btn-build" onclick="runAction('build')">编译</button><button onclick="clearPanel('build')">清空</button></span></div>
+    <div class="pbody" id="body-build"><div class="empty">等待构建日志…（点"编译"按钮或运行 tools\build.ps1）</div></div>
   </section>
 
   <section class="panel" id="panel-flash">
-    <div class="phead"><span class="led" id="ledFlash"></span><span class="pname">烧录<span class="sub">openocd</span></span><span class="spacer"></span><span class="meta" id="metaFlash">–</span><span class="pbtns"><button onclick="clearPanel('flash')">清空</button></span></div>
-    <div class="pbody" id="body-flash"><div class="empty">等待烧录日志…（运行 tools\flash.ps1）</div></div>
+    <div class="phead"><span class="led" id="ledFlash"></span><span class="pname">烧录<span class="sub">openocd</span></span><span class="spacer"></span><span class="meta" id="metaFlash">–</span><span class="pbtns"><button class="act" id="btn-flash" onclick="runAction('flash')">烧录</button><button onclick="clearPanel('flash')">清空</button></span></div>
+    <div class="pbody" id="body-flash"><div class="empty">等待烧录日志…（点"烧录"按钮或运行 tools\flash.ps1）</div></div>
   </section>
 
   <section class="panel" id="panel-debug">
-    <div class="phead"><span class="led" id="ledDebug"></span><span class="pname">调试<span class="sub">openocd gdb server</span></span><span class="spacer"></span><span class="meta" id="metaDebug">–</span><span class="pbtns"><button onclick="clearPanel('debug')">清空</button></span></div>
-    <div class="pbody" id="body-debug"><div class="empty">等待调试日志…（运行 tools\debug.ps1）</div></div>
+    <div class="phead"><span class="led" id="ledDebug"></span><span class="pname">调试<span class="sub">openocd gdb server</span></span><span class="spacer"></span><span class="meta" id="metaDebug">–</span><span class="pbtns"><button class="act" id="btn-reset" onclick="runAction('reset')">复位运行</button><button onclick="clearPanel('debug')">清空</button></span></div>
+    <div class="pbody" id="body-debug"><div class="empty">等待调试日志…（"复位运行"= openocd reset run）</div></div>
   </section>
 
   <section class="panel serial" id="panel-serial">
-    <div class="phead"><span class="led" id="ledSerial"></span><span class="pname">串口日志<span class="sub">USART1 @115200</span></span><span class="spacer"></span><span class="meta" id="metaSerial">–</span><span class="pbtns"><button onclick="clearPanel('serial')">清空</button></span></div>
-    <div class="pbody" id="body-serial"><div class="empty">等待串口数据…（运行 tools\serial.ps1）</div></div>
+    <div class="phead"><span class="led" id="ledSerial"></span><span class="pname">串口日志<span class="sub">USART1 @115200</span></span><span class="spacer"></span><span class="meta" id="metaSerial">–</span><span class="pbtns"><button class="act" id="btn-serial-live" onclick="toggleLive()">实时:开</button><button class="act" id="btn-reconnect_serial" onclick="runAction('reconnect_serial')">重连</button><button class="act" onclick="refreshSerial()">刷新</button><button onclick="clearPanel('serial')">清空</button></span></div>
+    <div class="note" id="serialNote"></div>
+    <div class="pbody" id="body-serial"><div class="empty">等待串口数据…（插上 DAPLink 后自动连接）</div></div>
   </section>
 </main>
 
@@ -104,6 +114,11 @@ var PANELS = ['build','flash','debug','serial'];
 var LIMIT = {build:120, flash:80, debug:120, serial:60};
 var lastLines = {}; PANELS.forEach(function(n){ lastLines[n] = []; });
 var offlineShown = false;
+var liveEnabled = true;                 // 串口实时轮询开关
+var ACTION_BTN  = {build:'btn-build', flash:'btn-flash', reset:'btn-reset', reconnect_serial:'btn-reconnect_serial'};
+var ACTION_LABEL= {build:'编译', flash:'烧录', reset:'复位运行', reconnect_serial:'重连'};
+var ACTION_SER  = ['build','flash','reset'];   // 服务端有 running 跟踪的动作
+var btnState = {};                      // cmd → busy|done|fail|null
 
 function el(id){ return document.getElementById(id); }
 
@@ -113,6 +128,100 @@ function esc(s){
   return d.innerHTML;
 }
 
+/* ===== 按钮状态管理 ===== */
+function setBtn(cmd, state){
+  btnState[cmd] = state;
+  var b = el(ACTION_BTN[cmd]); if (!b) return;
+  if (state === 'busy') { b.disabled = true; b.textContent = ACTION_LABEL[cmd] + '中…'; }
+  else if (state === 'done') {
+    b.disabled = false; b.textContent = '已触发';
+    window.setTimeout(function(){ if (btnState[cmd] === 'done') setBtn(cmd, null); }, 2500);
+  }
+  else if (state === 'fail') {
+    b.disabled = false; b.textContent = '失败';
+    window.setTimeout(function(){ if (btnState[cmd] === 'fail') setBtn(cmd, null); }, 2500);
+  }
+  else { b.disabled = false; b.textContent = ACTION_LABEL[cmd]; }
+}
+
+async function runAction(cmd){
+  if (btnState[cmd] === 'busy') return;
+  setBtn(cmd, 'busy');
+  try {
+    var r = await fetch('/api/action?cmd=' + encodeURIComponent(cmd), {cache:'no-store'});
+    var d = await r.json();
+    if (d && d.busy) { setBtn(cmd, 'busy'); }   // 服务端已有同动作在跑, 保持执行中
+    else { setBtn(cmd, 'done'); }
+  } catch(e){ setBtn(cmd, 'fail'); }
+}
+
+// 用服务端 running 状态校正按钮(动作异步完成/失败后恢复)
+function syncActionBtns(running){
+  var list = running || [];
+  ACTION_SER.forEach(function(cmd){
+    if (list.indexOf(cmd) >= 0) {
+      btnState[cmd] = 'busy';
+      var b = el(ACTION_BTN[cmd]);
+      if (b){ b.disabled = true; b.textContent = ACTION_LABEL[cmd] + '中…'; }
+    } else if (btnState[cmd] === 'busy') {
+      setBtn(cmd, null);
+    }
+  });
+}
+
+/* ===== 串口 ===== */
+function toggleLive(){
+  liveEnabled = !liveEnabled;
+  var b = el('btn-serial-live');
+  b.textContent = liveEnabled ? '实时:开' : '实时:停';
+  b.className = 'act' + (liveEnabled ? '' : ' on');
+  if (liveEnabled) fetchSerial(false);
+}
+
+async function refreshSerial(){ await fetchSerial(true); }
+
+async function fetchSerial(force){
+  try {
+    var sr = await fetch('/api/serial', {cache:'no-store'});
+    var sd = await sr.json();
+    var note = el('serialNote');
+    if (sd.live) {
+      renderPanel('serial', sd.lines || []);
+      el('ledSerial').className = 'led on';
+      el('metaSerial').textContent = (sd.port ? sd.port + ' @115200' : 'connected') + (sd.err ? ' · ' + sd.err : '');
+      note.className = 'note';
+    } else {
+      el('ledSerial').className = 'led off';
+      el('metaSerial').textContent = '断开' + (sd.err ? '：' + sd.err : '（自动重连中…）');
+      note.textContent = '串口断开' + (sd.err ? '：' + sd.err : '') + ' — 插上 DAPLink 后自动恢复，或点"重连"立即重试';
+      note.className = 'note show';
+      // 断开时回退显示文件日志(serial.ps1 落盘), 面板不空白
+      try {
+        var rr2 = await fetch('/api/log?name=serial&lines=300', {cache:'no-store'});
+        var d2 = await rr2.json();
+        renderPanel('serial', d2.lines || []);
+      } catch(e){}
+    }
+  } catch(e){}
+}
+
+/* ===== 徽标: 最后更新 + 数据新鲜度 ===== */
+function renderUpd(st){
+  var badge = el('updBadge');
+  var connected = st.serial && st.serial.connected;
+  var age = st.serial ? st.serial.lastDataAgeMs : -1;
+  if (connected) {
+    el('updTval').textContent = new Date().toLocaleTimeString();
+    badge.className = 'upd pulse' + (age > 6000 ? ' stale' : '');
+    badge.title = '串口数据新鲜度: ' + (age >= 0 ? (age/1000).toFixed(1) + 's 前' : '暂无数据') + (st.serial.port ? ' · ' + st.serial.port : '');
+  } else {
+    el('updTval').textContent = '串口断开';
+    badge.className = 'upd stale';
+    badge.title = st.serial && st.serial.err ? st.serial.err : '串口未连接';
+  }
+}
+
+/* ===== 面板渲染 ===== */
 function classify(name, line){
   if (name === 'serial') {
     if (line.indexOf('CRASH') >= 0) return 'l-crash';
@@ -157,6 +266,7 @@ function clearPanel(name){
   lastLines[name] = [];
 }
 
+/* ===== 状态渲染 ===== */
 function renderStatus(st){
   el('sTick').textContent = st.heartbeat ? st.heartbeat.tick : '–';
   el('sLoop').textContent = st.heartbeat ? st.heartbeat.highLoop : '–';
@@ -168,6 +278,8 @@ function renderStatus(st){
   el('ledTick').className = 'led ' + (st.heartbeat ? 'on' : '');
   el('ledLoop').className = 'led ' + (st.heartbeat ? 'on' : '');
   el('ledElf').className = 'led ' + (st.elf ? 'on' : '');
+  renderUpd(st);
+  syncActionBtns(st.running);
 }
 
 function showOffline(){
@@ -195,16 +307,7 @@ async function poll(){
   for (var i = 0; i < PANELS.length; i++){
     var name = PANELS[i];
     if (name === 'serial') {
-      try {
-        var sr = await fetch('/api/serial', {cache:'no-store'});
-        var sd = await sr.json();
-        if (sd.live) { renderPanel('serial', sd.lines || []); }
-        else {
-          var rr2 = await fetch('/api/log?name=serial&lines=300', {cache:'no-store'});
-          var d2 = await rr2.json();
-          renderPanel('serial', d2.lines || []);
-        }
-      } catch(e){}
+      if (liveEnabled) await fetchSerial(false);   // 实时开关: 关闭时不自动拉
       continue;
     }
     try {
@@ -215,7 +318,6 @@ async function poll(){
   }
 }
 
-// 串口面板已统一走 renderPanel 覆盖式刷新(服务端 /api/serial 返回最近 60 行, 每轮替换旧内容)
 poll();
 setInterval(poll, 2500);
 </script>
