@@ -17,6 +17,7 @@ param(
 
 $Project = Split-Path $PSScriptRoot -Parent
 $Server = Join-Path $PSScriptRoot "dashboard_server.ps1"
+$Watchdog = Join-Path $PSScriptRoot "watchdog.ps1"
 $SrvLog = Join-Path $Project "logs\dashboard_server.log"
 New-Item -ItemType Directory -Force (Split-Path $SrvLog) | Out-Null
 
@@ -52,6 +53,18 @@ if ($alive) {
         -WindowStyle Hidden -RedirectStandardOutput $SrvLog -RedirectStandardError "$SrvLog.err"
     Start-Sleep -Milliseconds 1200
     Write-Host "服务已启动: http://127.0.0.1:$Port  (日志: $SrvLog)"
+}
+
+# 看门狗保活: 已有看门狗进程则跳过, 否则拉起(服务挂了自动重启, 防拔插/误杀)
+$wdAlive = @(Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like '*watchdog.ps1*' })
+if ($wdAlive.Count -eq 0) {
+    $wdArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$Watchdog`" -Port $Port"
+    if ($SerialPort -ne "") { $wdArgs += " -SerialPort $SerialPort" }
+    Start-Process pwsh -ArgumentList $wdArgs -WindowStyle Hidden
+    Write-Host "看门狗已启动 (服务保活, 每 30s 探测, 日志: logs\watchdog.log)"
+} else {
+    Write-Host "看门狗已在运行 (PID=$($wdAlive[0].ProcessId))"
 }
 
 Start-Process "http://127.0.0.1:$Port"
