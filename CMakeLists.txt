@@ -38,6 +38,9 @@ add_executable(${CMAKE_PROJECT_NAME})
 # Add at32_workbench generated sources
 add_subdirectory(cmake/at32_workbench)
 
+# OTA 平台化核心库（纯 C 零芯片依赖，M1 起由 bootloader/app 链接）
+add_subdirectory(ota)
+
 # Link directories setup
 target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined library search paths
