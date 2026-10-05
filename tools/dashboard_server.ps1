@@ -26,8 +26,8 @@ param(
 $Root = Split-Path $PSScriptRoot -Parent
 $LogDir = Join-Path $Root "logs"
 $HtmlPath = Join-Path $PSScriptRoot "dashboard.html"
-$AllowedLogs = @("build", "flash", "debug", "serial", "reset")
-$AllowedActions = @("build", "flash", "reset", "reconnect_serial")
+$AllowedLogs = @("build", "flash", "debug", "serial", "reset", "ota")
+$AllowedActions = @("build", "flash", "reset", "reconnect_serial", "ota_upgrade", "ota_query", "ota_reset")
 $OpenOcdPath = "$env:LOCALAPPDATA\at32-tools\OpenOCD\V2.0.9\bin\openocd.exe"
 
 function Send-Json($ctx, $obj) {
@@ -193,7 +193,7 @@ function Get-RunningCmds {
     return $res
 }
 
-function Start-CmdAction([string]$cmd) {
+function Start-CmdAction([string]$cmd, $Query) {
     if ($cmd -eq "build") {
         # 与插件"编译"按钮等价; 脚本内 Start-Transcript 落盘 logs/build.log
         $scriptPath = Join-Path $PSScriptRoot "build.ps1"
@@ -223,6 +223,33 @@ function Start-CmdAction([string]$cmd) {
     elseif ($cmd -eq "reconnect_serial") {
         Ensure-SerialConnected -Force | Out-Null
         return 0   # 无进程可跟踪
+    }
+    elseif ($cmd -like "ota_*") {
+        # OTA: 调驾驶舱内置上位机 tools/iap_host_tool/cli_flash.py（自包含, 固定 AT32 profile）
+        #   【串口独占】OTA 用独立 python 进程独占串口, 服务端先释放自己的串口
+        #   （Windows 不允许两进程同时打开同一 COM; 完成后 /api/serial 的
+        #    Ensure-SerialConnected 会自动重连, 无需人工干预）
+        Close-Serial
+        $port = $Query["port"]
+        if (-not $port) { $port = $script:SerialTargetPort }
+        if (-not $port) { $port = Find-SerialPort }
+        if (-not $port) { Write-Host "OTA: 未指定端口且未探测到串口"; return 0 }
+        $py = (Get-Command python).Source
+        $cli = Join-Path $PSScriptRoot "iap_host_tool\cli_flash.py"
+        $mode = $cmd -replace "^ota_", ""     # upgrade / query / reset
+        $otaArgs = @($cli, "--profile", "AT32", "--mode", $mode, "--port", $port)
+        if ($mode -eq "upgrade") {
+            $fw = Join-Path $Root "build\Debug\AT32F421G8U7_WorkBench.bin"
+            $otaArgs += @("--firmware", $fw, "--listen", "10", "--reset-dir", $Root)
+            $th = $Query["throttle"]; if ($th) { $otaArgs += @("--throttle", $th) }
+            $cr = $Query["corrupt"];  if ($cr) { $otaArgs += @("--corrupt-frame", $cr) }
+        }
+        $proc = Start-Process $py -ArgumentList $otaArgs -WorkingDirectory $Root `
+            -WindowStyle Hidden -PassThru `
+            -RedirectStandardOutput (Join-Path $LogDir "ota.log") `
+            -RedirectStandardError (Join-Path $LogDir "ota.err.log")
+        Write-Host "OTA $mode -> $port (pid $($proc.Id))"
+        return $proc.Id
     }
     return 0
 }
@@ -348,7 +375,8 @@ try {
                     Send-Json $ctx @{ name = $name; lines = @($tail) }
                 }
             } elseif ($path -eq "/api/action") {
-                $cmd = $ctx.Request.QueryString["cmd"]
+                $query = $ctx.Request.QueryString
+                $cmd = $query["cmd"]
                 if ($AllowedActions -notcontains $cmd) {
                     $ctx.Response.StatusCode = 400
                     $ctx.Response.StatusDescription = "unknown action"
@@ -358,7 +386,7 @@ try {
                         # 同类动作已在执行 → 拒绝(防重复触发多个编译/烧录)
                         Send-Json $ctx @{ ok = $false; busy = $true; cmd = $cmd; running = $running }
                     } else {
-                    $procId = Start-CmdAction $cmd
+                    $procId = Start-CmdAction $cmd $query
                         # 强制 $script:Running 为哈希表(防御: 历史上曾出现被求值为数组/空值的运行时异常)
                         if ($null -eq $script:Running -or $script:Running -isnot [System.Collections.IDictionary]) {
                             $script:Running = @{}
