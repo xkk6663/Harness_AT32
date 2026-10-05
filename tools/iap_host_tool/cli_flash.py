@@ -62,7 +62,7 @@ class CliIAP:
         防御（驾驶舱集成实测踩坑）: APP 运行时串口是持续心跳数据流, 数据中
         假 0xAA 帧头会让扫描循环不断消费、外层 deadline 无法打断（卡死）。
         单次最多消费 MAX_FRAME_SCAN 字节, 超限视为无有效应答返回。"""
-        MAX_FRAME_SCAN = 1024
+        MAX_FRAME_SCAN = 64
         scanned = 0
         while True:
             b = self._read_byte()
