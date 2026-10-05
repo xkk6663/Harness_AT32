@@ -24,4 +24,7 @@ void OtaAppHook_HandleTrigger(void);
 /* 查询触发标志（可观测, 日志用） */
 uint8_t OtaAppHook_IsTriggered(void);
 
+/* 查询当前连续 '!' 计数（诊断用） */
+uint8_t OtaAppHook_BangCount(void);
+
 #endif /* OTA_APP_HOOK_H */

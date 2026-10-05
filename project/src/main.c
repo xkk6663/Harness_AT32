@@ -88,6 +88,12 @@ int main(void)
      M4 直接写 SCB->VTOR 即可, 无需 NVIC_SetVectorTable 旧 API。 */
   SCB->VTOR = 0x08004800u;
 
+  /* OTA: Bootloader 跳转前 __disable_irq()（见 ota_jump.c）, 手动跳转不会
+     像真实复位那样自动清 PRIMASK —— APP 必须自己重开全局中断,
+     否则 SysTick/USART/DMA 全部中断被屏蔽: wk_delay_ms 死等、心跳/停机链失效。
+     （踩坑指南 §28） */
+  __enable_irq();
+
   /* add user code end 1 */
 
   /* system clock config. */

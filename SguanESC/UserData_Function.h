@@ -37,7 +37,12 @@ static inline void User_Initial_Init(void){
     // 启用串口DMA接收
     usart_interrupt_enable(USART1, USART_IDLE_INT, TRUE); //打开空闲中断
     // 启动DMA1通道3，设置dtcnt的值为BUF_LEN，dma搬运一个数据dtcnt-1
-    dma_reset(DMA1_CHANNEL3); //重置RX DMA通道，准备接收数据
+    // 踩坑(踩坑指南 §20/§29): 这里不能 dma_reset(DMA1_CHANNEL3)!
+    //   main() 里 wk_dma1_channel3_init + wk_dma_channel_config 已配好 paddr/maddr/方向,
+    //   此处 dma_reset 会把 paddr/maddr/方向/宽度全部清零 → DMA 从 0 地址搬 0x00,
+    //   缓冲被 0x00 填满、真实串口数据(如 OTA 的 '!!!!!')无人搬运被丢弃。
+    //   正确做法: 只重设计数并保持使能(与 at32f421_int.c IDLE 处理同法)。
+    dma_channel_enable(DMA1_CHANNEL3, FALSE);
     dma_data_number_set(DMA1_CHANNEL3, BUF_LEN);
     dma_channel_enable(DMA1_CHANNEL3, TRUE);
 

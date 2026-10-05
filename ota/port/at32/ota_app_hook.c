@@ -47,6 +47,11 @@ uint8_t OtaAppHook_IsTriggered(void)
     return (uint8_t)ota_trigger_flag;
 }
 
+uint8_t OtaAppHook_BangCount(void)
+{
+    return (uint8_t)ota_bang_count;
+}
+
 void OtaAppHook_HandleTrigger(void)
 {
     uint32_t wait_ms;
