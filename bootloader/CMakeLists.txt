@@ -56,6 +56,11 @@ target_compile_definitions(${BOOT_TARGET} PRIVATE
     AT32F421G8U7
 )
 
+# 编译优化: Boot 统一 -Os 压缩体积——全局 Debug 是 -O0, CI GCC 13.2.1 下
+#   -O0 编译 Boot .text=20024B 溢出 18KB(1592B), 本地 13.3.1 -O0 为 17512B;
+#   -Os 双版本均稳过(实测 13.3.1 -Os 后明显小于 18KB)
+target_compile_options(${BOOT_TARGET} PRIVATE -Os)
+
 # 链接脚本：BOOT.ld（后置 -T 覆盖工具链全局的 APP.ld MEMORY 定义）
 # nosys.specs: 提供 _close/_lseek/_read/_sbrk/_fstat/_isatty 等空 syscalls
 #   （_write 由 ota_printf.c 提供, 其余无实际使用）

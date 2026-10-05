@@ -10,6 +10,7 @@
 
 #include "boot.h"
 #include <stdio.h>
+#include <string.h>
 #include "ota_upgrade_state.h"
 #include "ota_offset.h"
 #include "ota_crc32.h"

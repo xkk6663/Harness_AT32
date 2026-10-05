@@ -251,7 +251,9 @@ void USART1_IRQHandler(void)
             for (uint16_t _i = 0; _i < rx_len; _i++) {
                 OtaAppHook_ScanChar((char)usart1_rx_buf[_i]);
             }
-            memcpy(Sguan_PrintfBuff, usart1_rx_buf, rx_len);
+            // DMA 已停(idle 中断), 缓冲区此刻稳定, cast 掉 volatile 消除
+            // -Wdiscarded-qualifiers 警告(GCC 13.2.1 CI 构建暴露)
+            memcpy(Sguan_PrintfBuff, (uint8_t *)usart1_rx_buf, rx_len);
             SguanESC_Printf_Loop(Sguan_PrintfBuff, rx_len);
             LOG_INFO("uart rx: %u bytes -> SguanESC_Printf_Loop", (unsigned)rx_len);
             rx_len = 0; //清零接收长度，准备下一轮接收
