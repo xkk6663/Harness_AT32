@@ -20,7 +20,9 @@ jobs:
           sudo apt-get install -y gcc-arm-none-eabi cmake ninja-build
 
       - name: Configure (PATH toolchain)
-        run: cmake --preset Debug -DTOOLCHAIN_DIR=
+        # TOOLCHAIN_DIR= 走 toolchain 的 PATH 分支; CMAKE_MAKE_PROGRAM=ninja 覆盖
+        # CMakePresets 里硬编码的本机 Windows ninja 路径(CI runner 找不到)
+        run: cmake --preset Debug -DTOOLCHAIN_DIR= -DCMAKE_MAKE_PROGRAM=ninja
 
       - name: Build
         run: cmake --build build/Debug
