@@ -319,7 +319,7 @@ flowchart LR
 | **M0 核心库抽取** | 把 protocol / crc32 / flash_store / upgrade_state / offset / transport 抽到 `ota/core`（纯 C、去 STM32 头文件依赖） | `ota/core/*` | 在 STM32 工程里指向同一份代码编译，行为与原来完全一致（回归基准） |
 | **M1 AT32 Bootloader** | `ota/port/at32`（flash_hal / usart_hal / delay / printf / jump，v1.1 无 key）+ `bootloader/` target + `AT32F421x8_BOOT.ld` | `AT32F421G8U7_Boot.bin` | 上位机 `QUERY_OFFSET / QUERY_STATE / RESET_UPGRADE` 命令能收到正确应答；烧空 APP 区后 2s 窗口 `!` 触发进升级（纯软件触发） |
 | **M2 APP 集成** | `AT32F421x8_APP.ld` + `SCB->VTOR` + `ota_app_hook`（'!' 扫描 + 停机保护 + 状态写入） | 带 OTA 挂钩的 BLDC 固件 | 上位机「进入升级」→ APP 停机 → 复位 → Bootloader 打印 `Upgrade requested` |
-| **M3 端到端升级** | 上位机切 `at32` 配置，完整升级 BLDC 固件 | 升级链路跑通 | 100% 进度 → `STATE_UPGRADE_SUCCESS` → 复位后 APP 心跳/遥测正常 |
+| **M3 端到端升级** ✅ | 上位机切 `at32` 配置，完整升级 BLDC 固件（config.py 双 profile + `cli_flash.py` 无 GUI 验证） | 升级链路跑通 | 100% 进度 → `Upgrade complete. Final CRC: 0x9EE5BE44`（与上位机预计算一致）→ 硬件复位 → APP 心跳 10 条正常 → PASS |
 | **M4 全功能回归** | 断电续传、CRC 破坏重传、限制发送、查询/重置、CRC_FAIL 回退 | 回归记录 | 每个功能与 F103 行为一一对应（逐项核对 §7） |
 | **M5 工具链/CI 整合** | build.ps1 / flash.ps1 / dashboard / CI 双固件 + 体积断言 | 脚本 + CI 产物 | push 触发 CI 产出两个 bin；`flash.ps1 -All` 一键完成双固件烧录 |
 
