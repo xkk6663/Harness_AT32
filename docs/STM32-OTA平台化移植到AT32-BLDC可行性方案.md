@@ -320,7 +320,7 @@ flowchart LR
 | **M1 AT32 Bootloader** | `ota/port/at32`（flash_hal / usart_hal / delay / printf / jump，v1.1 无 key）+ `bootloader/` target + `AT32F421x8_BOOT.ld` | `AT32F421G8U7_Boot.bin` | 上位机 `QUERY_OFFSET / QUERY_STATE / RESET_UPGRADE` 命令能收到正确应答；烧空 APP 区后 2s 窗口 `!` 触发进升级（纯软件触发） |
 | **M2 APP 集成** | `AT32F421x8_APP.ld` + `SCB->VTOR` + `ota_app_hook`（'!' 扫描 + 停机保护 + 状态写入） | 带 OTA 挂钩的 BLDC 固件 | 上位机「进入升级」→ APP 停机 → 复位 → Bootloader 打印 `Upgrade requested` |
 | **M3 端到端升级** ✅ | 上位机切 `at32` 配置，完整升级 BLDC 固件（config.py 双 profile + `cli_flash.py` 无 GUI 验证） | 升级链路跑通 | 100% 进度 → `Upgrade complete. Final CRC: 0x9EE5BE44`（与上位机预计算一致）→ 硬件复位 → APP 心跳 10 条正常 → PASS |
-| **M4 全功能回归** | 断电续传、CRC 破坏重传、限制发送、查询/重置、CRC_FAIL 回退 | 回归记录 | 每个功能与 F103 行为一一对应（逐项核对 §7） |
+| **M4 全功能回归** 🔶 部分 | 断电续传、CRC 破坏重传、限制发送、查询/重置、CRC_FAIL 回退（工具 `logs/m4_regression.py`，状态页注入测试法） | 回归记录 | **T3 CRC 破坏重传 ✅**（帧 101 破坏 → Boot NAK → 重传 1 次 → 升级完成）；**T5 限制发送 ✅**（0.02s/帧 慢速升级完成）；T1 查询/重置、T2 断电续传、T4 CRC_FAIL 回退 **未完成**——被 DAPLink CDC 假死（openocd 反复烧状态页后串口 0 字节）与"重插后 Flash 非本工程固件（`[alive]` 打印）"硬件环境问题反复打断，待环境稳定后继续（详见踩坑指南 §31） |
 | **M5 工具链/CI 整合** | build.ps1 / flash.ps1 / dashboard / CI 双固件 + 体积断言 | 脚本 + CI 产物 | push 触发 CI 产出两个 bin；`flash.ps1 -All` 一键完成双固件烧录 |
 
 预计总工作量：M0~M3 为主干（约 60%），M4 回归（约 25%），M5 收尾（约 15%）。
