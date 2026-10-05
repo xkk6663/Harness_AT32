@@ -209,7 +209,38 @@ python logs\m4_regression.py   # T1 查询重置 / T2 断电续传 / T3 CRC破�
 
 ---
 
-## 七、闭环演示（崩溃定位，插件时代做不到）
+## 七、边缘管理中控平台（规划中，技术选型已定）
+
+**目标**：把驾驶舱（编译/烧录/调试/串口遥测）与 `STM32-OTA-QT` 的 PyQt6 OTA 上位机（固件升级/续传/CRC 模拟）融合为一个**嵌入式边缘管理中控平台**，借鉴 DeepSeek Harness "一切皆插件"的构建方式。
+
+### 选型结论（`docs/边缘管理中控平台-技术选型.md` v0.1）
+| 决策点 | 结论 | 理由 |
+|---|---|---|
+| 平台形态 | **Web 平台**（Python 后端 + 浏览器前端） | 驾驶舱已 Web 化；OTA 核心纯 Python；远程/AI 接入天然 |
+| 后端框架 | **FastAPI**（或 aiohttp） | SSE/WebSocket 原生支持（遥测/升级进度推送） |
+| 前端 | **原生 JS 延续 dashboard.html** | "简洁美丽"已有先例；面板 = 插件注册的卡片 |
+| OTA 上位机 | **核心并入后端，PyQt6 壳丢弃** | `protocol.py`/`firmware.py`/`iap_worker.py` 零 Qt 依赖，直接搬为服务 |
+| 插件化 | **轻量 Cordis 式**：manifest + 注册表，三档渐进 | 同构 DSH 理念，不引入重运行时 |
+
+### 现状（诚实标注）
+- ✅ **技术选型文档**（2026-10-04，v0.1）
+- ⬜ **档 1：FastAPI 后端 + OTA 核心搬入 + 前端 OTA 面板**（未开始）
+- ⬜ **档 2：能力插件化**（未开始）｜ ⬜ **档 3：平台化/多设备**（未开始）
+- **当前 OTA 升级入口仍是 CLI**：`iap_host_tool/cli_flash.py`（无 GUI，供 CI/AI 自动化）
+
+### 渐进路线（三档，避免一步到位）
+| 档 | 内容 | 验收 |
+|---|---|---|
+| 1（近期） | 后端迁 Python（FastAPI，动作仍 subprocess 调 pwsh 脚本）；OTA 核心搬入服务模块；前端新增 OTA 面板（延续深色风格） | OTA 面板完成真实固件升级；驾驶舱功能零回退 |
+| 2（中期） | 插件管理器（manifest 扫描+注册表+依赖）；现有能力改造为插件（build/flash/debug/serial/ota/crash）；配置中心 | 新增插件不改内核即可上线 |
+| 3（远期） | 多设备/多芯片档案；事件总线+SSE 全链路；插件远程管理 | 一台中控管 AT32/STM32 多板卡 |
+
+### 待确认问题（详见文档 §8）
+远程访问与鉴权、后端 Python 常驻接受度、OTA 面板风格（默认延续深色）、插件粒度（按能力）、Qt 是否保留离线版（默认不保留）。
+
+---
+
+## 八、闭环演示（崩溃定位，插件时代做不到）
 
 ```powershell
 # 终端1: 起 GDB server
@@ -231,7 +262,7 @@ arm-none-eabi-gdb build/Debug/AT32F421G8U7_WorkBench.elf
 
 ---
 
-## 八、CI 说明
+## 九、CI 说明
 
 - 触发：`push` / `pull_request` 到任意分支
 - 流程：Ubuntu → `gcc-arm-none-eabi + cmake + ninja` →
@@ -244,7 +275,7 @@ arm-none-eabi-gdb build/Debug/AT32F421G8U7_WorkBench.elf
 
 ---
 
-## 九、学习文档（重要）
+## 十、学习文档（重要）
 
 | 文档 | 内容 |
 |---|---|
@@ -257,7 +288,7 @@ arm-none-eabi-gdb build/Debug/AT32F421G8U7_WorkBench.elf
 
 ---
 
-## 十、里程碑进度（OTA 平台化 M0~M5）
+## 十一、里程碑进度（OTA 平台化 M0~M5）
 
 | 里程碑 | 状态 |
 |---|---|
