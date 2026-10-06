@@ -68,6 +68,27 @@ class BridgeSerial:
     def reset_output_buffer(self):
         pass
 
+    @property
+    def in_waiting(self):
+        """非阻塞探测 socket 接收缓冲区, 返回可读取字节数(对齐 pyserial.Serial.in_waiting)。
+
+        cli_flash 监听升级完成打印时轮询此属性; BridgeSerial 之前缺此属性
+        导致 AttributeError, OTA 最后一步误报 FAIL(固件实际已写入成功)。"""
+        try:
+            old_timeout = self._sock.gettimeout()
+            self._sock.settimeout(0)
+            try:
+                d = self._sock.recv(4096)
+                if d:
+                    self._buf += d
+            except (socket.timeout, BlockingIOError, OSError):
+                pass
+            finally:
+                self._sock.settimeout(old_timeout)
+        except Exception:
+            pass
+        return len(self._buf)
+
     def _fill(self, n):
         while len(self._buf) < n:
             try:
