@@ -87,6 +87,19 @@ class SerialBridge:
         except Exception:
             pass
 
+    # ---- 嗅探转储: 主动生成 RX/TX 字节流 HEX 转储, 独立落盘 ----
+    def _sniff_dump(self, direction, data):
+        """direction: 'RX'(设备→PC) / 'TX'(PC→设备); data: bytes.
+        每块最多 64 字节, 空格分隔便于阅读; 与主日志(文本)独立存储展示。"""
+        if not self.sniff_file or not data:
+            return
+        lines = []
+        for i in range(0, len(data), 64):
+            chunk = data[i:i+64]
+            hex_str = " ".join(f"{b:02X}" for b in chunk)
+            lines.append(f"{direction}: 0x {hex_str}")
+        self._append_truncated(self.sniff_file, "\n".join(lines) + "\n")
+
     # ---- 监视通道: 行缓冲 + 落盘(嗅探转储分流) ----
     def push_bytes(self, data):
         now = time.time()
@@ -114,6 +127,8 @@ class SerialBridge:
         # 嗅探转储独立落盘(不占正常行缓冲, 前端独立框展示)
         if sniff_lines:
             self._append_truncated(self.sniff_file, "\n".join(sniff_lines) + "\n")
+        # RX 主动转储: 设备→PC 的原始字节流 HEX(与文本主日志独立)
+        self._sniff_dump("RX", data)
         # RX HEX 落盘(逐块 hex 大写, 供面板 HEX 模式显示; 超 2MB 截断)
         if self.hex_file and data:
             self._append_truncated(self.hex_file, data.hex().upper() + "\n")
@@ -175,6 +190,8 @@ class SerialBridge:
                 # 客户端字节 → 写 COM 口
                 if self.ser and self.ser.is_open:
                     try:
+                        # TX 主动转储: OTA 通道→设备的原始字节流 HEX
+                        self._sniff_dump("TX", req)
                         self.ser.write(req)
                         self.ser.flush()
                     except Exception as e:
@@ -221,6 +238,8 @@ class SerialBridge:
                 conn.settimeout(5.0)
                 req = conn.recv(4096)
                 if req and self.ser and self.ser.is_open:
+                    # TX 主动转储: 驾驶舱→设备的原始字节流 HEX
+                    self._sniff_dump("TX", req)
                     self.ser.write(req)
                     self.ser.flush()
                     print(f"[bridge] TX {len(req)}B → COM", flush=True)
