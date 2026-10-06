@@ -180,6 +180,14 @@ openocd -s . -f openocd/interface/cmsis-dap.cfg -f openocd/target/at32f421xx.cfg
 
 ## 五、OTA 升级子系统（使用说明）
 
+### 功能演示（驾驶舱 OTA 面板，端到端 PASS）
+
+![OTA 升级成功演示](docs/screenshots/ota_success.png)
+
+上图为驾驶舱 OTA 面板完整升级流程：查询状态 `0xA5A5A5A2 (UPGRADING)` → 固件发送 100%（37560/37560）→ `[upgrade] complete (CRC verified)` → Boot 打印 `=== Upgrade complete. Final CRC: 0x9EE5BE44 ===` → `Reset to run APP` → 硬件复位 → 复位后收到 1377B / 心跳 10 条，APP 正常运行（`[I][5000] heartbeat tick=5000 high_loop=200023`）。
+
+**全链路零插件**：触发（APP 停机链）→ Boot 收固件（YMODEM-like 自定义协议）→ CRC32 校验 → 写状态页 → 复位 → Boot 跳 APP（内联汇编原子跳转）→ APP 心跳恢复，全部通过 CMake+OpenOCD+GDB+Python 工具链完成。
+
 ### 状态机与地址表（`ota/core/upgrade_state.h`、`ota_common.h`）
 | 项 | 值 |
 |---|---|
