@@ -352,14 +352,14 @@ arm-none-eabi-gdb build/Debug/AT32F421G8U7_WorkBench.elf
 |---|---|
 | `docs/STM32-OTA平台化移植到AT32-BLDC可行性方案.md` | OTA 平台化 v1.1 方案（M0~M5 里程碑 + 四决策 + 协议/地址/验收） |
 | `docs/学习路线.md` | 从插件到命令行工具链的 commit 式迁移路线（Step 0~6 + 设计决策） |
-| `docs/踩坑指南.md` | 真实踩坑记录（§1~§31：编码/调试器接口/串口链路/openocd 占用/CDC 假死/OTA 三坑...） |
+| `docs/踩坑指南.md` | 真实踩坑记录（§1~§38：编码/调试器接口/串口链路/openocd 占用/CDC 假死/OTA 三坑/前端渲染崩溃/图形化配置路径冲突...） |
 | `docs/经验总结.md` | 认知升级与收益清单（含 OTA 平台化九条认知） |
 | `docs/cortex-debug教程.md` | F5 调试完整教程（快捷键/外设视图/排障） |
 | `docs/边缘管理中控平台-技术选型.md` | Qt 上位机 + 驾驶舱合并的中控平台技术选型 |
 
 ---
 
-## 十一、里程碑进度（OTA 平台化 M0~M5）
+## 十一、里程碑进度（OTA 平台化 M0~M5 + 驾驶舱）
 
 | 里程碑 | 状态 |
 |---|---|
@@ -369,6 +369,12 @@ arm-none-eabi-gdb build/Debug/AT32F421G8U7_WorkBench.elf
 | M3 端到端升级（双 profile + CLI） | ✅ 已推（738d2a4） |
 | M4 全功能回归（T3/T5 PASS，T1/T2/T4 待环境稳定续跑） | 🔶 部分 |
 | M5 工具链/CI 整合（build.ps1 双固件 + 体积断言） | ⬜ 未开始 |
+| 驾驶舱五面板（构建/烧录/调试/串口/OTA）+ 串口桥双线代理 | ✅ 已完成 |
+| OTA 升级面板（Qt cli_flash 模式 + 服务端动作 + 固件选择） | ✅ 已完成 |
+| 串口左右布局（左 RX 文本 / 右 TX 嗅探 HEX 转储） | ✅ 已完成 |
+| CI（GitHub Actions）双固件构建 + 符号校验 | 🔶 APP 通过，Boot 在 Ubuntu GCC 13.2.1 下 FLASH 溢出 1592B（本机 GCC 13.3.1 通过） |
 
-**环境提醒**：DAPLink CDC 假死（openocd 连续连接后串口 0 字节）→ 等 5s + 重开串口恢复；
-重插后若串口出现未知 `[alive]` 打印 → 重烧 Boot+APP（`logs\flash_restore.py`）锚定固件身份。
+**环境提醒**：
+- DAPLink CDC 假死（openocd 连续连接后串口 0 字节）→ 等 5s + 重开串口恢复；重插后若串口出现未知 `[alive]` 打印 → 重烧 Boot+APP（`logs\flash_restore.py`）锚定固件身份。
+- Boot 升级模式误触发敏感：STATE_RUNNING 时 2 秒窗口内单个 `!` 或 `0xAA` 即触发升级（待修复为要求连续 5 个 `!`）；复位前停桥可规避。
+- 图形化配置（AT32 Work Bench .ATWP）生成的文件固定输出到 `project/src/` 和 `project/inc/`，**不要移动**，否则重新生成会不同步。
