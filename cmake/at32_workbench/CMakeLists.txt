@@ -10,6 +10,7 @@ set(WK_Defines_Syms
 
 # AT32 WorkBench generated include paths
 set(WK_Include_Dirs
+    ${CMAKE_SOURCE_DIR}/middlewares
     ${CMAKE_SOURCE_DIR}/project/inc
     ${CMAKE_SOURCE_DIR}/libraries/drivers/inc
     ${CMAKE_SOURCE_DIR}/libraries/cmsis/cm4/core_support
@@ -21,13 +22,13 @@ set(WK_Application_Src
     ${CMAKE_SOURCE_DIR}/project/src/main.c
     ${CMAKE_SOURCE_DIR}/project/src/syscalls.c
     ${CMAKE_SOURCE_DIR}/project/src/sysmem.c
-    ${CMAKE_SOURCE_DIR}/project/src/at32f421_wk_config.c
+    ${CMAKE_SOURCE_DIR}/middlewares/at32f421_wk_config.c
     ${CMAKE_SOURCE_DIR}/project/src/at32f421_int.c
-    ${CMAKE_SOURCE_DIR}/project/src/wk_system.c
-    ${CMAKE_SOURCE_DIR}/project/src/wk_usart.c
-    ${CMAKE_SOURCE_DIR}/project/src/wk_adc.c
-    ${CMAKE_SOURCE_DIR}/project/src/wk_tmr.c
-    ${CMAKE_SOURCE_DIR}/project/src/wk_dma.c
+    ${CMAKE_SOURCE_DIR}/middlewares/wk_system.c
+    ${CMAKE_SOURCE_DIR}/middlewares/wk_usart.c
+    ${CMAKE_SOURCE_DIR}/middlewares/wk_adc.c
+    ${CMAKE_SOURCE_DIR}/middlewares/wk_tmr.c
+    ${CMAKE_SOURCE_DIR}/middlewares/wk_dma.c
     ${CMAKE_SOURCE_DIR}/startup_at32f421.s
 )
 

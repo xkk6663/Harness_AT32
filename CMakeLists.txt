@@ -62,10 +62,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/SguanESC/Sguan_printf.c
     ${CMAKE_CURRENT_LIST_DIR}/SguanESC/Sguan_SWPWM.c 
     ${CMAKE_CURRENT_LIST_DIR}/SguanESC/Sguan_MotorStatus.c
-    ${CMAKE_CURRENT_LIST_DIR}/Hardware/Timer.c
+    ${CMAKE_CURRENT_LIST_DIR}/middlewares/Timer.c
     ${CMAKE_CURRENT_LIST_DIR}/crash/crash.c
     ${CMAKE_CURRENT_LIST_DIR}/log/log.c
-    ${CMAKE_CURRENT_LIST_DIR}/project/src/wk_tmr15.c
+    ${CMAKE_CURRENT_LIST_DIR}/middlewares/wk_tmr15.c
     ${CMAKE_CURRENT_LIST_DIR}/ota/port/at32/ota_app_hook.c
     ${CMAKE_CURRENT_LIST_DIR}/ota/port/at32/ota_flash_hal.c
 )
@@ -74,8 +74,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
     ${CMAKE_CURRENT_LIST_DIR}/project/src
+    ${CMAKE_CURRENT_LIST_DIR}/middlewares
     ${CMAKE_CURRENT_LIST_DIR}/SguanESC
-    ${CMAKE_CURRENT_LIST_DIR}/Hardware
     ${CMAKE_CURRENT_LIST_DIR}/crash
     ${CMAKE_CURRENT_LIST_DIR}/log
     ${CMAKE_CURRENT_LIST_DIR}/ota/core

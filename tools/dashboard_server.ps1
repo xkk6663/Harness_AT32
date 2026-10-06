@@ -27,7 +27,7 @@ $Root = Split-Path $PSScriptRoot -Parent
 $LogDir = Join-Path $Root "logs"
 $HtmlPath = Join-Path $PSScriptRoot "dashboard.html"
 $AllowedLogs = @("build", "flash", "debug", "serial", "reset", "ota")
-$AllowedActions = @("build", "flash", "reset", "reconnect_serial", "ota_upgrade", "ota_query", "ota_reset")
+$AllowedActions = @("build", "flash", "reset", "reconnect_serial", "ota_upgrade", "ota_query", "ota_reset", "ota_trigger", "ota_query_offset", "ota_stop")
 $OpenOcdPath = "$env:LOCALAPPDATA\at32-tools\OpenOCD\V2.0.9\bin\openocd.exe"
 
 function Send-Json($ctx, $obj) {
@@ -224,6 +224,16 @@ function Start-CmdAction([string]$cmd, $Query) {
         Ensure-SerialConnected -Force | Out-Null
         return 0   # 无进程可跟踪
     }
+    elseif ($cmd -eq "ota_stop") {
+        # 停止运行中的 OTA python 进程（cli_flash.py 无暂停, 停止=杀进程）
+        $killed = @()
+        Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -like '*cli_flash*' } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force; $killed += $_.ProcessId }
+        if ($killed.Count -gt 0) { Write-Host "OTA stop: killed $($killed -join ',')" }
+        else { Write-Host "OTA stop: no cli_flash process" }
+        return 0
+    }
     elseif ($cmd -like "ota_*") {
         # OTA: 调驾驶舱内置上位机 tools/iap_host_tool/cli_flash.py（自包含, 固定 AT32 profile）
         #   【串口独占】OTA 用独立 python 进程独占串口, 服务端先释放自己的串口
@@ -239,8 +249,9 @@ function Start-CmdAction([string]$cmd, $Query) {
         $mode = $cmd -replace "^ota_", ""     # upgrade / query / reset
         $otaArgs = @($cli, "--profile", "AT32", "--mode", $mode, "--port", $port)
         if ($mode -eq "upgrade") {
-            $fw = Join-Path $Root "build\Debug\AT32F421G8U7_WorkBench.bin"
-            $otaArgs += @("--firmware", $fw, "--listen", "10", "--reset-dir", $Root)
+            $fwPath = $Query["fw"]
+            if (-not $fwPath) { $fwPath = Join-Path $Root "build\Debug\AT32F421G8U7_WorkBench.bin" }
+            $otaArgs += @("--firmware", $fwPath, "--listen", "10", "--reset-dir", $Root)
             $th = $Query["throttle"]; if ($th) { $otaArgs += @("--throttle", $th) }
             $cr = $Query["corrupt"];  if ($cr) { $otaArgs += @("--corrupt-frame", $cr) }
         }

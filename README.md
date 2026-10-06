@@ -32,13 +32,19 @@
 | 崩溃定位 | `crash/crash.c` | HardFault 现场（PC/LR/栈帧/CFSR/BFAR）记录 + 串口打印 + GDB 离线分析 |
 | 调试 | `tools/debug.ps1` + GDB | 断点/观察点/寄存器/栈回溯/coredump |
 
-### 4. OTA 升级（平台化移植，M0~M3 完成）
+### 4. OTA 升级（平台化移植，M0~M3 完成 + 驾驶舱面板）
 - **纯 C 核心库** `ota/core/`：protocol / crc32 / flash_store / upgrade_state / offset / transport，
   零芯片依赖，STM32 老工程与 AT32 新工程共享同一份代码（双构建哈希一致验证）
 - **AT32 Bootloader**（`bootloader/` 独立 target，@0x08000000，18KB）+ **APP 重定位**
   （`AT32F421x8_APP.ld`，@0x08004800，44KB + `SCB->VTOR` + 停机保护链 `ota_app_hook`）
 - **上位机双 profile**（`config.py`：AT32 / STM32）+ **无 GUI CLI**（`cli_flash.py`）：
   触发 → 逐帧发送（ACK/NAK 重传）→ CRC 校验 → 硬件复位 → 心跳验证，供 CI/AI 自动调用
+- **驾驶舱 OTA 面板**（STM32-OTA-QT PyQt6 界面功能 Web 化移植）：
+  - 按钮：开始升级（触发+全量/断点续传）、进入升级（仅触发）、查询进度（QUERY_OFFSET）、
+    查询状态（QUERY_STATE）、重置（RESET_UPGRADE）、停止（杀进程）
+  - 控件：串口端口 / 固件 .bin 路径（可编辑）/ 每帧限速 / CRC 破坏帧号 + 进度条 + 状态徽章
+  - 后端：`dashboard_server.ps1` 新增 `ota_trigger/ota_query_offset/ota_stop` 动作；
+    执行前 `Close-Serial` 释放串口独占，完成后 `/api/serial` 自动重连
 
 ---
 
@@ -86,13 +92,24 @@ AT32F421G8U7_WorkBench/
 ├── ota/                          # 【OTA】平台化核心 + 移植层
 │   ├── core/                     #   纯 C 核心库（protocol/crc32/flash_store/upgrade_state/offset/transport）
 │   └── port/at32/                #   AT32 移植层（flash_hal/usart_hal/delay/printf/jump/ota_app_hook）
-├── project/                      # ATWP 生成代码（main.c、wk_*.c）+ 用户钩子区
-│   └── src/
-│       ├── main.c                # VTOR 重定位 + __enable_irq + OtaAppHook_HandleTrigger
-│       └── at32f421_int.c        # USART1 IDLE + DMA 接收（OTA 触发扫描）
+├── project/                      # ATWP 生成代码 + 用户钩子区（业务入口）
+│   ├── src/
+│   │   ├── main.c                # VTOR 重定位 + __enable_irq + OtaAppHook_HandleTrigger
+│   │   ├── at32f421_int.c        # USART1 IDLE + DMA 接收（OTA 触发扫描）
+│   │   ├── syscalls.c / sysmem.c # 系统支撑（semihosting 规避）
+│   └── inc/
+│       ├── at32f421_conf.h       # 库配置头
+│       └── at32f421_int.h
+├── middlewares/                  # 【中间层】硬件驱动之上、业务之下（架构重构后统一收纳）
+│   ├── wk_system.c/h             #   系统时钟 / systick
+│   ├── wk_usart.c/h              #   串口中间层
+│   ├── wk_dma.c/h                #   DMA 中间层
+│   ├── wk_adc.c/h                #   ADC 中间层
+│   ├── wk_tmr.c/h + wk_tmr15.c/h #   定时器中间层
+│   ├── at32f421_wk_config.c/h    #   ATWP 外设配置
+│   └── Timer.c/h                 #   板级定时器封装（原 Hardware/）
 ├── libraries/                    # CMSIS + AT32 标准外设库
 ├── SguanESC/                     # 电机库（BLDC 算法，勿动）
-├── Hardware/                     # 硬件层（Timer.c）
 ├── crash/crash.c                 # 崩溃现场记录器（naked 强符号接管 4 个 fault handler）
 ├── log/log.c + log.h             # 串口日志模块（等级裁剪 + 周期日志 + 时间戳）
 ├── openocd/
@@ -106,7 +123,11 @@ AT32F421G8U7_WorkBench/
 │   ├── serial.ps1                # 串口监视器（自动探测 + 时间戳 + 默认落盘 logs/serial.log）
 │   ├── dashboard.ps1             # 驾驶舱启动器（起服务 + 开浏览器）
 │   ├── dashboard_server.ps1      # 驾驶舱数据服务（HttpListener，127.0.0.1 安全绑定）
-│   └── dashboard.html            # 驾驶舱前端（四路日志实时面板 + 全局状态）
+│   ├── dashboard.html            # 驾驶舱前端（编译/烧录/调试/串口/OTA 五路面板 + 全局状态）
+│   └── iap_host_tool/            # 【OTA】上位机（自包含, 驾驶舱 OTA 面板后端）
+│       ├── cli_flash.py          #   CLI：upgrade/query/reset/trigger/query_offset 五种模式
+│       ├── config.py             #   APP_PROFILE（AT32/STM32 双 profile）
+│       └── core/                 #   protocol/firmware/iap_worker（移植自 STM32-OTA-QT）
 ├── logs/                         # 工具链输出日志 + 回归/诊断脚本（git 忽略）
 ├── docs/                         # 方案 / 学习路线 / 踩坑指南 / 经验总结 / 教程
 ├── .github/workflows/build.yml   # CI：push 自动构建 + 符号校验 + 产物上传

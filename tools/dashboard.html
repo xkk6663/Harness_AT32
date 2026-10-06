@@ -42,6 +42,13 @@ body{padding:14px 16px 40px}
 .pname .sub{color:var(--dim);font-weight:400;font-size:11px;margin-left:4px}
 .phead .spacer{flex:1}
 .phead .meta{font-size:11px;color:var(--dim)}
+.otaState{font-size:11px;color:var(--dim);font-family:var(--mono);padding:2px 8px;border:1px solid var(--border);border-radius:4px;margin-right:6px}
+.otaState.ok{color:var(--green);border-color:#3fb95066;background:#3fb9501a}
+.otaState.bad{color:#f85149;border-color:#f8514955;background:#f8514914}
+.otaState.busy{color:#d29922;border-color:#d2992266;background:#d299221a}
+.progress{display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);font-size:11px;font-family:var(--mono)}
+.progress-bar{height:8px;border-radius:4px;background:linear-gradient(90deg,#58a6ff,#3fb950);transition:width .4s ease;min-width:2px}
+.progress-txt{color:var(--dim);min-width:42px;text-align:right}
 .pbtns{display:flex;gap:4px}
 .pbtns button{background:transparent;border:1px solid var(--border);color:var(--dim);font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer}
 .pbtns button:hover{color:var(--text);border-color:var(--blue)}
@@ -106,18 +113,24 @@ body{padding:14px 16px 40px}
     <div class="note" id="serialNote"></div>
     <div class="pbody" id="body-serial"><div class="empty">等待串口数据…（插上 DAPLink 后自动连接）</div></div>
   </section>
+  <section class="panel" id="panel-ota">
+    <div class="phead"><span class="led" id="ledOta"></span><span class="pname">OTA 升级<span class="sub">Bootloader 协议 · AT32 profile（Qt 版功能移植）</span></span><span class="spacer"></span><span class="otaState" id="otaState">–</span><span class="meta" id="metaOta">–</span><span class="pbtns"><button class="act" id="btn-ota_upgrade" onclick="runOta('ota_upgrade')">开始升级</button><button class="act" id="btn-ota_trigger" onclick="runOta('ota_trigger')">进入升级</button><button class="act" id="btn-ota_query_offset" onclick="runOta('ota_query_offset')">查询进度</button><button class="act" id="btn-ota_query" onclick="runOta('ota_query')">查询状态</button><button class="act" id="btn-ota_reset" onclick="runOta('ota_reset')">重置</button><button class="act" id="btn-ota_stop" onclick="runOta('ota_stop')">停止</button><button onclick="clearPanel('ota')">清空</button></span></div>
+    <div class="note" id="otaNote">端口 <input id="otaPort" size="6" placeholder="自动"> 固件 <input id="otaFwPath" size="30" value="build/Debug/AT32F421G8U7_WorkBench.bin"> 限制s/帧 <input id="otaThrottle" size="3" placeholder="0"> CRC破坏帧 <input id="otaCorrupt" size="4" placeholder="-1"></div>
+    <div class="progress"><div class="progress-bar" id="otaBar" style="width:0%"></div><span class="progress-txt" id="otaPct">0%</span></div>
+    <div class="pbody" id="body-ota"><div class="empty">等待 OTA 日志…（"开始升级"= 触发+全量/续传；"进入升级"只发触发信号）</div></div>
+  </section>
 </main>
 
 <script>
 'use strict';
-var PANELS = ['build','flash','debug','serial'];
-var LIMIT = {build:120, flash:80, debug:120, serial:60};
+var PANELS = ['build','flash','debug','serial','ota'];
+var LIMIT = {build:120, flash:80, debug:120, serial:60, ota:150};
 var lastLines = {}; PANELS.forEach(function(n){ lastLines[n] = []; });
 var offlineShown = false;
 var liveEnabled = true;                 // 串口实时轮询开关
-var ACTION_BTN  = {build:'btn-build', flash:'btn-flash', reset:'btn-reset', reconnect_serial:'btn-reconnect_serial'};
-var ACTION_LABEL= {build:'编译', flash:'烧录', reset:'复位运行', reconnect_serial:'重连'};
-var ACTION_SER  = ['build','flash','reset'];   // 服务端有 running 跟踪的动作
+var ACTION_BTN  = {build:'btn-build', flash:'btn-flash', reset:'btn-reset', reconnect_serial:'btn-reconnect_serial', ota_upgrade:'btn-ota_upgrade', ota_query:'btn-ota_query', ota_reset:'btn-ota_reset', ota_trigger:'btn-ota_trigger', ota_query_offset:'btn-ota_query_offset', ota_stop:'btn-ota_stop'};
+var ACTION_LABEL= {build:'编译', flash:'烧录', reset:'复位运行', reconnect_serial:'重连', ota_upgrade:'开始升级', ota_query:'查询状态', ota_reset:'重置', ota_trigger:'进入升级', ota_query_offset:'查询进度', ota_stop:'停止'};
+var ACTION_SER  = ['build','flash','reset','ota_upgrade','ota_query','ota_reset','ota_trigger','ota_query_offset'];   // 服务端有 running 跟踪的动作(ota_stop 杀进程后立即归位)
 var btnState = {};                      // cmd → busy|done|fail|null
 
 function el(id){ return document.getElementById(id); }
@@ -153,6 +166,60 @@ async function runAction(cmd){
     if (d && d.busy) { setBtn(cmd, 'busy'); }   // 服务端已有同动作在跑, 保持执行中
     else { setBtn(cmd, 'done'); }
   } catch(e){ setBtn(cmd, 'fail'); }
+}
+
+// OTA 动作: 带端口/固件/节流/CRC 破坏参数（后端固定 AT32 profile）
+async function runOta(cmd){
+  if (btnState[cmd] === 'busy') return;
+  setBtn(cmd, 'busy');
+  var port = el('otaPort').value.trim();
+  var q = '/api/action?cmd=' + encodeURIComponent(cmd);
+  if (port) q += '&port=' + encodeURIComponent(port);
+  if (cmd === 'ota_upgrade') {
+    var fw = el('otaFwPath').value.trim();
+    var th = el('otaThrottle').value.trim();
+    var cr = el('otaCorrupt').value.trim();
+    if (fw) q += '&fw=' + encodeURIComponent(fw);
+    if (th) q += '&throttle=' + encodeURIComponent(th);
+    if (cr && cr !== '-1') q += '&corrupt=' + encodeURIComponent(cr);
+  }
+  if (cmd === 'ota_upgrade') { setOtaState('busy', '升级中…'); }
+  try {
+    var r = await fetch(q, {cache:'no-store'});
+    var d = await r.json();
+    if (d && d.busy) { setBtn(cmd, 'busy'); }
+    else { setBtn(cmd, 'done'); }
+  } catch(e){ setBtn(cmd, 'fail'); }
+}
+
+// OTA 状态徽章
+function setOtaState(kind, text){
+  var s = el('otaState');
+  s.textContent = text;
+  s.className = 'otaState' + (kind ? ' ' + kind : '');
+}
+
+// 从 OTA 日志解析状态机/进度（Qt 界面等效: 状态标签 + 进度条）
+function updateOtaFromLines(lines){
+  var pct = -1, state = null, kind = '';
+  for (var i = 0; i < lines.length; i++){
+    var l = lines[i];
+    var m = l.match(/\[tx\] (\d+)%/);
+    if (m) pct = parseInt(m[1]);
+    m = l.match(/\[state\] 0x[0-9A-Fa-f]+ \(([^)]+)\)/);
+    if (m){ state = m[1]; kind = m[1] === 'SUCCESS' ? 'ok' : (m[1] === 'CRC_FAIL' ? 'bad' : 'busy'); }
+    m = l.match(/\[offset\] 已写 (\d+) 页/);
+    if (m){ state = '已写 ' + m[1] + ' 页'; kind = 'busy'; }
+    if (/\[wait\]/.test(l)){ state = '等待升级模式…'; kind = 'busy'; }
+    if (/\[go\]/.test(l)){ state = '发送固件中…'; kind = 'busy'; }
+    if (/\[result\] PASS/.test(l)){ state = '✓ 升级完成'; kind = 'ok'; pct = 100; }
+    if (/\[result\] FAIL|\[error\]/.test(l)){ state = '✗ 失败'; kind = 'bad'; }
+  }
+  if (pct >= 0) {
+    el('otaBar').style.width = Math.min(100, pct) + '%';
+    el('otaPct').textContent = pct + '%';
+  }
+  if (state) setOtaState(kind, state);
 }
 
 // 用服务端 running 状态校正按钮(动作异步完成/失败后恢复)
@@ -230,6 +297,13 @@ function classify(name, line){
     if (/^\[I\]/.test(line)) return 'heartbeat';
     return '';
   }
+  if (name === 'ota') {
+    if (/\[result\] PASS/.test(line)) return 'heartbeat';
+    if (/\[result\] FAIL|失败|error/i.test(line)) return 'l-red';
+    if (/Upgrade complete|Final CRC|\[upgrade\]/.test(line)) return 'l-blue';
+    if (/\[tx\]|\[go\]|\[trigger\]|\[boot\]/.test(line)) return 'l-yellow';
+    return '';
+  }
   if (line.indexOf('CRASH') >= 0) return 'l-crash';
   if (/\[E\]|error|Error|失败/.test(line)) return 'l-red';
   if (/\[W\]|警告|warn/i.test(line)) return 'l-yellow';
@@ -254,6 +328,7 @@ function renderPanel(name, lines){
   }
   body.innerHTML = out.join('');
   lastLines[name] = lines.slice(-200);
+  if (name === 'ota') updateOtaFromLines(lines);
   var led = el('led' + name.charAt(0).toUpperCase() + name.slice(1));
   led.className = 'led ' + (newCount > 0 ? 'on' : (lines.length ? 'busy' : ''));
   el('meta' + name.charAt(0).toUpperCase() + name.slice(1)).textContent =

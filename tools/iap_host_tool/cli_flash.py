@@ -359,10 +359,64 @@ class CliIAP:
             if self._ser and self._ser.is_open:
                 self._ser.close()
 
+    # ---- 仅触发模式（驾驶舱 OTA 面板"进入升级"） ----
+    def run_trigger(self):
+        """只发送触发信号让 APP 停机进入 Boot 升级窗口，不发送固件"""
+        print(f"[cfg] profile={profile_name()}", flush=True)
+        print(f"[open] {self._port} @ {self._baud}", flush=True)
+        self._ser = serial.Serial(port=self._port, baudrate=self._baud, timeout=3,
+                                  write_timeout=3)
+        self._ser.reset_input_buffer()
+        time.sleep(0.3)
+        try:
+            if self._profile["trigger"] == "bang5":
+                print("[trigger] 发 '!!!!!' x3 (AT32 停机链+Boot 窗口)", flush=True)
+                for _ in range(3):
+                    self._send_raw(b"!!!!!")
+                    time.sleep(0.8)
+            else:
+                print("[trigger] 发 '!' x10 (STM32)", flush=True)
+                for _ in range(10):
+                    self._send_raw(b"!")
+                    time.sleep(0.4)
+            # 触发后轮询等 Boot 窗口就绪(QUERY_OFFSET 有应答)
+            pages = self._wait_device_ready(20)
+            if pages is None:
+                print("[state] 触发后 20s 内未进入升级模式（停机链 / 时序 / CDC 假死?）",
+                      flush=True)
+                return False
+            print(f"[go] 已进入升级模式, 已写 {pages} 页 ({pages*1024} 字节)", flush=True)
+            return True
+        finally:
+            if self._ser and self._ser.is_open:
+                self._ser.close()
+
+    # ---- 仅查询写入进度模式（驾驶舱 OTA 面板"查询进度"） ----
+    def run_query_offset(self):
+        """发 QUERY_OFFSET 打印 Boot 已写入页数（断电续传断点）"""
+        print(f"[cfg] profile={profile_name()}", flush=True)
+        print(f"[open] {self._port} @ {self._baud}", flush=True)
+        self._ser = serial.Serial(port=self._port, baudrate=self._baud, timeout=3,
+                                  write_timeout=3)
+        self._ser.reset_input_buffer()
+        time.sleep(0.3)
+        try:
+            pages = self._query_offset()
+            if pages is None:
+                print("[offset] 无应答（未进入升级模式 / Boot SUCCESS 死循环 / CDC 假死）",
+                      flush=True)
+                return False
+            print(f"[offset] 已写 {pages} 页 ({pages*1024} 字节)", flush=True)
+            return True
+        finally:
+            if self._ser and self._ser.is_open:
+                self._ser.close()
+
 
 def main():
     ap = argparse.ArgumentParser(description="CLI OTA 端到端升级 / 查询 / 重置")
-    ap.add_argument("--mode", choices=["upgrade", "query", "reset"],
+    ap.add_argument("--mode", choices=["upgrade", "query", "reset", "trigger",
+                                       "query_offset"],
                     default="upgrade", help="操作模式(默认完整升级)")
     ap.add_argument("--profile", default=None,
                     help="覆盖 config.APP_PROFILE (AT32/STM32, 默认读 config.py)")
@@ -393,6 +447,12 @@ def main():
         elif args.mode == "reset":
             runner = CliIAP(args.port, profile["baud"], profile)
             ok = runner.run_reset()
+        elif args.mode == "trigger":
+            runner = CliIAP(args.port, profile["baud"], profile)
+            ok = runner.run_trigger()
+        elif args.mode == "query_offset":
+            runner = CliIAP(args.port, profile["baud"], profile)
+            ok = runner.run_query_offset()
         else:
             runner = CliIAP(args.port, profile["baud"], profile, reset_dir=args.reset_dir)
             ok = runner.run(args.firmware, listen_after=args.listen,
