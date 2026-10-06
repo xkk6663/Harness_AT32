@@ -33,12 +33,16 @@ except ImportError:
 
 
 class SerialBridge:
-    def __init__(self, port, baud, tcp_port, lines_file, stale):
+    def __init__(self, port, baud, tcp_port, lines_file, stale,
+                 ctrl_port=5011, hex_file=None, sniff_file=None):
         self.port = port
         self.baud = baud
         self.tcp_port = tcp_port
         self.lines_file = lines_file
         self.stale_sec = stale
+        self.ctrl_port = ctrl_port      # TX 控制端口: 客户端字节 → 写 COM
+        self.hex_file = hex_file        # RX HEX 落盘(原始字节 hex, 面板 HEX 模式数据源)
+        self.sniff_file = sniff_file    # 嗅探转储分流(外部工具回灌的 "RX: 0x.." 文本)
         self.ser = None
         self.lines = []            # 内存行缓冲(监视通道)
         self.tail = b""            # 半行残尾
@@ -69,7 +73,21 @@ class SerialBridge:
             print(f"[bridge] open {self.port} 失败: {e}", flush=True)
             return False
 
-    # ---- 监视通道: 行缓冲 + 落盘 ----
+    # ---- 落盘辅助: 共享写追加, 超 2MB 截断只留尾部 ----
+    def _append_truncated(self, path, text):
+        try:
+            if os.path.exists(path) and os.path.getsize(path) > 2 * 1024 * 1024:
+                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                    f.seek(-256 * 1024, os.SEEK_END)
+                    tail_keep = f.read()
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(tail_keep)
+            with open(path, "a", encoding="utf-8", errors="replace") as f:
+                f.write(text)
+        except Exception:
+            pass
+
+    # ---- 监视通道: 行缓冲 + 落盘(嗅探转储分流) ----
     def push_bytes(self, data):
         now = time.time()
         self.last_data = now
@@ -77,28 +95,28 @@ class SerialBridge:
         parts = buf.split(b"\n")
         self.tail = parts[-1]
         new_lines = []
+        sniff_lines = []          # "RX: 0x.." 转储文本 = 外部嗅探/回环工具回灌, 单独一路
         for p in parts[:-1]:
             line = p.replace(b"\r", b"").decode("utf-8", errors="replace")
             line = "".join(ch for ch in line if ch.isprintable() or ch in "\t")
             if line.strip():
-                new_lines.append(line)
+                if line.startswith("RX: 0x") or line.startswith("TX: 0x"):
+                    sniff_lines.append(line)
+                else:
+                    new_lines.append(line)
         if new_lines:
             with self.lock:
                 self.lines.extend(new_lines)
                 if len(self.lines) > 500:
                     self.lines = self.lines[-500:]
-            # 落盘供服务端读取(共享写, 追加; 超 2MB 截断只留尾部防无限增长)
-            try:
-                if os.path.exists(self.lines_file) and os.path.getsize(self.lines_file) > 2 * 1024 * 1024:
-                    with open(self.lines_file, "r", encoding="utf-8", errors="replace") as f:
-                        f.seek(-256 * 1024, os.SEEK_END)
-                        tail_keep = f.read()
-                    with open(self.lines_file, "w", encoding="utf-8") as f:
-                        f.write(tail_keep)
-                with open(self.lines_file, "a", encoding="utf-8", errors="replace") as f:
-                    f.write("\n".join(new_lines) + "\n")
-            except Exception:
-                pass
+            # 正常通道落盘供服务端读取
+            self._append_truncated(self.lines_file, "\n".join(new_lines) + "\n")
+        # 嗅探转储独立落盘(不占正常行缓冲, 前端独立框展示)
+        if sniff_lines:
+            self._append_truncated(self.sniff_file, "\n".join(sniff_lines) + "\n")
+        # RX HEX 落盘(逐块 hex 大写, 供面板 HEX 模式显示; 超 2MB 截断)
+        if self.hex_file and data:
+            self._append_truncated(self.hex_file, data.hex().upper() + "\n")
         # 转发给所有 OTA 客户端(双路分发)
         self.broadcast(data)
 
@@ -187,6 +205,33 @@ class SerialBridge:
             t = threading.Thread(target=self.handle_client, args=(conn,), daemon=True)
             t.start()
 
+    # ---- TX 控制通道(驾驶舱发送): 只写 COM, 不参与广播 ----
+    def ctrl_server(self):
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", self.ctrl_port))
+        srv.listen(4)
+        print(f"[bridge] TX 控制监听 127.0.0.1:{self.ctrl_port}", flush=True)
+        while self.running:
+            try:
+                conn, _ = srv.accept()
+            except Exception:
+                continue
+            try:
+                conn.settimeout(5.0)
+                req = conn.recv(4096)
+                if req and self.ser and self.ser.is_open:
+                    self.ser.write(req)
+                    self.ser.flush()
+                    print(f"[bridge] TX {len(req)}B → COM", flush=True)
+            except Exception:
+                pass
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
     def run(self):
         # 首行落盘标记(便于服务端判断代理活着)
         try:
@@ -199,6 +244,8 @@ class SerialBridge:
         t1.start()
         t2 = threading.Thread(target=self.tcp_server, daemon=True)
         t2.start()
+        t3 = threading.Thread(target=self.ctrl_server, daemon=True)
+        t3.start()
         while self.running:
             time.sleep(1)
 
@@ -209,10 +256,24 @@ def main():
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--tcp", type=int, default=5010)
     ap.add_argument("--lines-file", default="serial.live")
+    ap.add_argument("--hex-file", default=None,
+                    help="RX HEX 落盘路径(默认 <lines-file 目录>/serial.hex)")
+    ap.add_argument("--ctrl-port", type=int, default=5011,
+                    help="TX 控制端口(驾驶舱发送), 默认 5011")
+    ap.add_argument("--sniff-file", default=None,
+                    help="嗅探转储落盘路径(默认 <lines-file 目录>/serial.sniff)")
     ap.add_argument("--stale", type=int, default=30,
                     help="读方向 N 秒无数据视为假死并重开(默认 30)")
     a = ap.parse_args()
-    bridge = SerialBridge(a.port, a.baud, a.tcp, a.lines_file, a.stale)
+    hex_file = a.hex_file
+    if hex_file is None and a.lines_file:
+        hex_file = os.path.join(os.path.dirname(a.lines_file), "serial.hex")
+    sniff_file = a.sniff_file
+    if sniff_file is None and a.lines_file:
+        sniff_file = os.path.join(os.path.dirname(a.lines_file), "serial.sniff")
+    bridge = SerialBridge(a.port, a.baud, a.tcp, a.lines_file, a.stale,
+                          ctrl_port=a.ctrl_port, hex_file=hex_file,
+                          sniff_file=sniff_file)
     try:
         bridge.run()
     except KeyboardInterrupt:

@@ -27,7 +27,7 @@ $Root = Split-Path $PSScriptRoot -Parent
 $LogDir = Join-Path $Root "logs"
 $HtmlPath = Join-Path $PSScriptRoot "dashboard.html"
 $AllowedLogs = @("build", "flash", "debug", "serial", "reset", "ota")
-$AllowedActions = @("build", "flash", "reset", "reconnect_serial", "ota_upgrade", "ota_query", "ota_reset", "ota_trigger", "ota_query_offset", "ota_stop")
+$AllowedActions = @("build", "flash", "reset", "reconnect_serial", "serial_tx", "ota_upgrade", "ota_query", "ota_reset", "ota_trigger", "ota_query_offset", "ota_stop")
 $OpenOcdPath = "$env:LOCALAPPDATA\at32-tools\OpenOCD\V2.0.9\bin\openocd.exe"
 
 function Send-Json($ctx, $obj) {
@@ -64,6 +64,7 @@ $script:SerialTail = ""
 $script:LastSerialData = [DateTime]::MinValue         # 最近一次收到数据的时间(判新鲜度)
 $script:PortScanCache = $null                          # 端口探测结果缓存(30s)
 $script:PortScanAt = [DateTime]::MinValue
+$script:SerialCtrlPort = 5011                          # 桥 TX 控制端口(驾驶舱发送)
 
 function Bridge-Py {
     return "C:\Users\xiao1\AppData\Local\Doubao\User Data\sandbox_runtime\bases\c98c5042338ed152c6f10ecd8591889f\python\python.exe"
@@ -240,6 +241,25 @@ function Start-CmdAction([string]$cmd, $Query) {
         Ensure-SerialConnected -Force | Out-Null
         return 0   # 无进程可跟踪
     }
+    elseif ($cmd -eq "serial_tx") {
+        # 驾驶舱 TX: 经桥 TX 控制端口(5011)写 COM 口
+        $data = $Query["data"]
+        if (-not $data) { Write-Host "serial_tx: 空数据"; return 0 }
+        $portNo = $script:SerialCtrlPort
+        if (-not $portNo) { $portNo = 5011 }
+        try {
+            $client = [System.Net.Sockets.TcpClient]::new("127.0.0.1", $portNo)
+            try {
+                $bytes = [System.Text.Encoding]::UTF8.GetBytes($data)
+                $client.GetStream().Write($bytes, 0, $bytes.Length)
+                $client.GetStream().Flush()
+            } finally { $client.Close() }
+            Write-Host "serial_tx: $($bytes.Length)B → COM ($data)"
+        } catch {
+            Write-Host "serial_tx: 连接桥 TX 端口失败: $($_.Exception.Message)"
+        }
+        return 0
+    }
     elseif ($cmd -eq "ota_stop") {
         # 停止运行中的 OTA python 进程（cli_flash.py 无暂停, 停止=杀进程）
         $killed = @()
@@ -356,10 +376,17 @@ try {
             } elseif ($path -eq "/api/status") {
                 Send-Json $ctx (Get-Status)
             } elseif ($path -eq "/api/serial") {
-                # 双线模式: 数据来自 serial_bridge 代理落盘 serial.live
+                # 双线模式: 数据来自 serial_bridge 代理落盘 serial.live / serial.hex
                 #   (代理独占 COM 口, OTA 走 TCP 透传, 两者互不影响, 无抢占)
+                $mode = $ctx.Request.QueryString["mode"]   # text(默认) / hex / sniff
                 if (Ensure-SerialConnected) {
-                    $livePath = Bridge-LiveFile
+                    $livePath = if ($mode -eq "hex") {
+                        (Join-Path $LogDir "serial.hex")
+                    } elseif ($mode -eq "sniff") {
+                        (Join-Path $LogDir "serial.sniff")
+                    } else {
+                        Bridge-LiveFile
+                    }
                     $content = ""
                     if (Test-Path $livePath) {
                         $fs = [System.IO.File]::Open($livePath, [System.IO.FileMode]::Open,
@@ -367,9 +394,19 @@ try {
                         try { $content = [System.IO.StreamReader]::new($fs, [System.Text.Encoding]::UTF8).ReadToEnd() }
                         finally { $fs.Dispose() }
                     }
-                    $lines = @($content -split "`r?`n" | Where-Object {
-                            $_.Trim().Length -gt 0 -and $_ -notmatch '^\*+$' -and
-                            $_ -notmatch 'PowerShell transcript' } | Select-Object -Last 60)
+                    if ($mode -eq "hex") {
+                        # HEX 模式: 每行一块 hex, 拆成可读字节列表
+                        $lines = @($content -split "`r?`n" | Where-Object { $_.Trim().Length -gt 0 } |
+                            Select-Object -Last 30)
+                    } elseif ($mode -eq "sniff") {
+                        # 嗅探转储: 外部工具回灌的 RX/TX 字节转储文本, 独立展示
+                        $lines = @($content -split "`r?`n" | Where-Object { $_.Trim().Length -gt 0 } |
+                            Select-Object -Last 80)
+                    } else {
+                        $lines = @($content -split "`r?`n" | Where-Object {
+                                $_.Trim().Length -gt 0 -and $_ -notmatch '^\*+$' -and
+                                $_ -notmatch 'PowerShell transcript' } | Select-Object -Last 60)
+                    }
                     # 代理活着 + 文件新鲜 → live; 否则按断开处理(前端提示重连)
                     $fresh = (Test-Path $livePath) -and
                              (((Get-Date) - (Get-Item $livePath).LastWriteTime).TotalSeconds -le 30)
@@ -379,6 +416,7 @@ try {
                         lines = $lines
                         err = $script:SerialErr
                         bridge = (Bridge-Alive)
+                        mode = $mode
                     }
                 } else {
                     Send-Json $ctx @{ live = $false; lines = @(); port = $script:SerialTargetPort; err = $script:SerialErr }

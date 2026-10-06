@@ -66,6 +66,8 @@ body{padding:14px 16px 40px}
 .pbtns button:disabled:hover{border-color:var(--border);color:var(--dim);background:transparent}
 .pbtns button.act.on{color:var(--green);border-color:#3fb95066;background:#3fb9501a}
 .pbody{flex:1;overflow-y:auto;padding:8px 12px;font-size:12.5px;min-height:200px;max-height:480px}
+.pbody.sniff{max-height:180px;min-height:90px;border-top:1px dashed var(--border);background:#161b2208;color:#a371f7;font-family:var(--mono);font-size:11.5px}
+.pbody.sniff .empty{color:#8b949e99}
 .line{white-space:pre-wrap;word-break:break-all;padding:0 2px;border-radius:2px;animation:none}
 .line.fresh{background:#1f6feb22;animation:lineFlash 1.2s ease-out}
 @keyframes lineFlash{from{background:#1f6feb59}to{background:#1f6feb22}}
@@ -144,9 +146,11 @@ body{padding:14px 16px 40px}
   <div class="page" id="page-serial">
     <div class="grid">
   <section class="panel serial" id="panel-serial">
-    <div class="phead"><span class="led" id="ledSerial"></span><span class="pname">串口日志<span class="sub">USART1 @115200</span></span><span class="spacer"></span><span class="meta" id="metaSerial">–</span><span class="pbtns"><button class="act" id="btn-serial-live" onclick="toggleLive()">实时:开</button><button class="act" id="btn-reconnect_serial" onclick="runAction('reconnect_serial')">重连</button><button class="act" onclick="refreshSerial()">刷新</button><button onclick="clearPanel('serial')">清空</button></span></div>
+    <div class="phead"><span class="led" id="ledSerial"></span><span class="pname">串口日志<span class="sub">USART1 @115200 · 双线代理</span></span><span class="spacer"></span><span class="meta" id="metaSerial">–</span><span class="pbtns"><button class="act" id="btn-serial-live" onclick="toggleLive()">实时:开</button><button class="act" id="btn-reconnect_serial" onclick="runAction('reconnect_serial')">重连</button><button class="act" onclick="refreshSerial()">刷新</button><button onclick="clearPanel('serial')">清空</button></span></div>
+    <div class="otacfg">TX <input id="serialTx" size="34" placeholder="发送字符串(如 !!!!! 或协议字节 0x..)" onkeydown="if(event.key==='Enter')sendSerialTx()"> <button onclick="sendSerialTx()" title="经桥 TX 通道写 COM">发送</button> RX模式 <select id="serialMode" onchange="switchSerialMode()"><option value="text">文本</option><option value="hex">HEX</option></select><span style="color:var(--dim);font-size:11px">HEX=原始字节(诊断乱码/协议用)</span></div>
     <div class="note" id="serialNote"></div>
     <div class="pbody" id="body-serial"><div class="empty">等待串口数据…（插上 DAPLink 后自动连接）</div></div>
+    <div class="pbody sniff" id="body-sniff"><div class="empty">嗅探转储（外部工具回灌的 RX/TX 字节流，独立存储展示）</div></div>
   </section>
     </div>
   </div>
@@ -166,7 +170,7 @@ body{padding:14px 16px 40px}
 <script>
 'use strict';
 var PANELS = ['build','flash','debug','serial','ota'];
-var LIMIT = {build:120, flash:80, debug:120, serial:60, ota:150};
+var LIMIT = {build:120, flash:80, debug:120, serial:60, ota:150, sniff:80};
 var lastLines = {}; PANELS.forEach(function(n){ lastLines[n] = []; });
 var offlineShown = false;
 var liveEnabled = true;                 // 串口实时轮询开关
@@ -324,6 +328,8 @@ function syncActionBtns(running){
 }
 
 /* ===== 串口 ===== */
+var serialMode = 'text';   // text / hex(原始字节)
+
 function toggleLive(){
   liveEnabled = !liveEnabled;
   var b = el('btn-serial-live');
@@ -334,13 +340,56 @@ function toggleLive(){
 
 async function refreshSerial(){ await fetchSerial(true); }
 
+function switchSerialMode(){
+  serialMode = el('serialMode').value;
+  refreshSerial();
+}
+
+/* TX 发送: 经服务端 /api/action serial_tx → 桥 TX 端口(5011) → COM 口 */
+async function sendSerialTx(){
+  var v = el('serialTx').value;
+  if (!v) return;
+  try {
+    var r = await fetch('/api/action?cmd=serial_tx&data=' + encodeURIComponent(v), {cache:'no-store'});
+    var d = await r.json();
+    if (!(d && d.ok)) { el('serialNote').textContent = 'TX 发送失败(桥未就绪?)'; el('serialNote').className = 'note show'; }
+  } catch(e){
+    el('serialNote').textContent = 'TX 发送异常: ' + e; el('serialNote').className = 'note show';
+  }
+  el('serialTx').value = '';
+}
+
 async function fetchSerial(force){
   try {
-    var sr = await fetch('/api/serial', {cache:'no-store'});
+    var sr = await fetch('/api/serial' + (serialMode === 'hex' ? '?mode=hex' : ''), {cache:'no-store'});
     var sd = await sr.json();
     var note = el('serialNote');
+    // 嗅探转储独立通道(外部工具回灌的 RX/TX 字节), 与主日志分开存储展示
+    try {
+      var sf = await fetch('/api/serial?mode=sniff', {cache:'no-store'});
+      var sd2 = await sf.json();
+      if (sd2.lines && sd2.lines.length) renderPanel('sniff', sd2.lines || []);
+    } catch(e2){}
     if (sd.live) {
-      renderPanel('serial', sd.lines || []);
+      if (serialMode === 'hex') {
+        // HEX 模式: 每行一块 hex, 拆字节显示(带 ASCII 注释, 便于看乱码/协议)
+        var rows = [];
+        (sd.lines || []).forEach(function(block){
+          var hx = block.replace(/[^0-9a-fA-F]/g, '');
+          for (var i = 0; i < hx.length; i += 32) {
+            var seg = hx.substr(i, 32);
+            var asc = '';
+            for (var j = 0; j < seg.length; j += 2) {
+              var b = parseInt(seg.substr(j, 2), 16);
+              asc += (b >= 32 && b <= 126) ? String.fromCharCode(b) : '.';
+            }
+            rows.push('HEX ' + seg + '  |' + asc + '|');
+          }
+        });
+        renderPanel('serial', rows.slice(-60));
+      } else {
+        renderPanel('serial', sd.lines || []);
+      }
       el('ledSerial').className = 'led on';
       el('metaSerial').textContent = (sd.port ? sd.port + ' @115200' : 'connected') + (sd.err ? ' · ' + sd.err : '');
       note.className = 'note';
@@ -417,8 +466,9 @@ function renderPanel(name, lines){
   lastLines[name] = lines.slice(-200);
   if (name === 'ota') updateOtaFromLines(lines);
   var led = el('led' + name.charAt(0).toUpperCase() + name.slice(1));
-  led.className = 'led ' + (newCount > 0 ? 'on' : (lines.length ? 'busy' : ''));
-  el('meta' + name.charAt(0).toUpperCase() + name.slice(1)).textContent =
+  var meta = el('meta' + name.charAt(0).toUpperCase() + name.slice(1));
+  if (led) led.className = 'led ' + (newCount > 0 ? 'on' : (lines.length ? 'busy' : ''));
+  if (meta) meta.textContent =
     newCount > 0 ? ('+' + newCount + ' 新行 · ' + new Date().toLocaleTimeString()) : (lines.length ? lines.length + ' 行' : '无日志');
   if (name === 'serial') body.scrollTop = body.scrollHeight;
 }
