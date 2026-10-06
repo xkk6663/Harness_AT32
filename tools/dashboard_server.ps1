@@ -59,28 +59,47 @@ $script:Serial = $null
 $script:SerialTargetPort = ""                        # 上次成功连接的端口(重连优先)
 $script:SerialConnected = $false
 $script:SerialErr = ""
-$script:SerialBuf = New-Object System.Collections.Generic.List[string]
+$script:SerialBuf = New-Object System.Collections.Generic.List[string]   # 保留(历史引用)
 $script:SerialTail = ""
 $script:LastSerialData = [DateTime]::MinValue         # 最近一次收到数据的时间(判新鲜度)
 $script:PortScanCache = $null                          # 端口探测结果缓存(30s)
 $script:PortScanAt = [DateTime]::MinValue
 
+function Bridge-Py {
+    return "C:\Users\xiao1\AppData\Local\Doubao\User Data\sandbox_runtime\bases\c98c5042338ed152c6f10ecd8591889f\python\python.exe"
+}
+function Bridge-Script {
+    return (Join-Path $PSScriptRoot "iap_host_tool\serial_bridge.py")
+}
+function Bridge-LiveFile {
+    return (Join-Path $LogDir "serial.live")
+}
+# 双线模式(根治 OTA/监视抢占): 常驻 python 代理独占 COM 口, 服务端不再
+# 自己打开串口. 串口数据经代理落盘 serial.live 转发; OTA 走代理 TCP 透传.
+function Bridge-Alive {
+    return @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like '*serial_bridge*' }).Count -gt 0
+}
 function Open-SerialPort([string]$port) {
-    try {
-        $sp = New-Object System.IO.Ports.SerialPort($port, 115200, 'None', 8, 'One')
-        $sp.ReadTimeout = 200
-        $sp.DtrEnable = $true
-        $sp.RtsEnable = $true
-        $sp.Open()
-        $script:Serial = $sp
+    # 已跑 → 复用(常驻代理不重复拉起)
+    if (Bridge-Alive) {
         $script:SerialTargetPort = $port
         $script:SerialConnected = $true
         $script:SerialErr = ""
-        $script:SerialBuf.Clear()
-        $script:SerialTail = ""
+        return $true
+    }
+    # 未跑 → 拉起独占串口的代理
+    try {
+        $py = Bridge-Py
+        if (-not (Test-Path $py)) { $py = (Get-Command python).Source }
+        $bridgeArgs = @((Bridge-Script), "--port", $port, "--lines-file", (Bridge-LiveFile))
+        Start-Process $py -ArgumentList $bridgeArgs -WindowStyle Hidden | Out-Null
+        Start-Sleep -Milliseconds 1000
+        $script:SerialTargetPort = $port
+        $script:SerialConnected = $true
+        $script:SerialErr = ""
         return $true
     } catch {
-        $script:Serial = $null
         $script:SerialConnected = $false
         $script:SerialErr = $_.Exception.Message
         return $false
@@ -130,27 +149,24 @@ function Find-SerialPort {
 }
 
 function Close-Serial {
-    if ($script:Serial) {
-        try { $script:Serial.Close() } catch { }
-        $script:Serial = $null
-    }
+    # 双线模式: 代理常驻不杀; 仅标记断开(Force 重连时由 Ensure 重启代理)
     $script:SerialConnected = $false
 }
 
-# 保证串口在线: 已连→OK; 断开→按 目标端口→自动探测 顺序重连
+# 保证串口在线: 代理活着→OK; 未跑→按 目标端口→自动探测 顺序拉起代理
 function Ensure-SerialConnected([switch]$Force) {
     if ($Force) { Close-Serial }
-    if ($script:Serial -and $script:Serial.IsOpen) { return $true }
+    if ($script:SerialConnected -and (Bridge-Alive)) { return $true }
 
     # 1) 优先重试上次成功端口(最快路径, 拔插恢复后 COM 号通常不变)
     if ($script:SerialTargetPort -ne "" -and (Open-SerialPort $script:SerialTargetPort)) {
-        Write-Host "串口重连成功: $($script:SerialTargetPort)"
+        Write-Host "串口代理就绪: $($script:SerialTargetPort)"
         return $true
     }
     # 2) 目标端口失败 → 自动探测(缓存内直接复用, 避免 4s CIM 枚举)
     $detected = Find-SerialPort
     if ($detected -and (Open-SerialPort $detected)) {
-        Write-Host "串口重连成功(自动探测): $detected"
+        Write-Host "串口代理就绪(自动探测): $detected"
         return $true
     }
     $script:SerialErr = "无可用串口(拔插后自动重试中)"
@@ -160,14 +176,14 @@ function Ensure-SerialConnected([switch]$Force) {
 # ---- 串口初始化(启动时) ----
 if ($SerialPort -ne "") {
     if (-not (Open-SerialPort $SerialPort)) {
-        Write-Host "串口连接失败: $SerialPort ($($script:SerialErr)) → 自动重连模式"
+        Write-Host "串口代理启动失败: $SerialPort ($($script:SerialErr)) → 自动重连模式"
     } else {
-        Write-Host "串口已连接: $SerialPort @115200 (dashboard 实时模式)"
+        Write-Host "串口代理已启动: $SerialPort @115200 (dashboard 实时模式)"
     }
 } else {
     $detected = Find-SerialPort
     if ($detected -and (Open-SerialPort $detected)) {
-        Write-Host "串口已连接(自动探测): $detected @115200"
+        Write-Host "串口代理已启动(自动探测): $detected @115200"
     } else {
         Write-Host "未找到串口 → 自动重连模式(插上 DAPLink 后自动恢复)"
     }
@@ -236,18 +252,19 @@ function Start-CmdAction([string]$cmd, $Query) {
     }
     elseif ($cmd -like "ota_*") {
         # OTA: 调驾驶舱内置上位机 tools/iap_host_tool/cli_flash.py（自包含, 固定 AT32 profile）
-        #   【串口独占】OTA 用独立 python 进程独占串口, 服务端先释放自己的串口
-        #   （Windows 不允许两进程同时打开同一 COM; 完成后 /api/serial 的
-        #    Ensure-SerialConnected 会自动重连, 无需人工干预）
-        Close-Serial
+        #   【双线模式】serial_bridge 常驻独占 COM 口, OTA 走 TCP 透传(--bridge),
+        #   不再释放串口、不交接、不挂起 —— 监视面板与 OTA 互不影响。
         $port = $Query["port"]
         if (-not $port) { $port = $script:SerialTargetPort }
         if (-not $port) { $port = Find-SerialPort }
         if (-not $port) { Write-Host "OTA: 未指定端口且未探测到串口"; return 0 }
-        $py = (Get-Command python).Source
+        # 固定用沙箱 python(自包含 pyserial), 避免 PATH 解析到别处
+        $py = "C:\Users\xiao1\AppData\Local\Doubao\User Data\sandbox_runtime\bases\c98c5042338ed152c6f10ecd8591889f\python\python.exe"
+        if (-not (Test-Path $py)) { $py = (Get-Command python).Source }
         $cli = Join-Path $PSScriptRoot "iap_host_tool\cli_flash.py"
         $mode = $cmd -replace "^ota_", ""     # upgrade / query / reset
-        $otaArgs = @($cli, "--profile", "AT32", "--mode", $mode, "--port", $port)
+        $otaArgs = @($cli, "--profile", "AT32", "--mode", $mode, "--port", $port,
+                     "--bridge", "127.0.0.1:5010")
         if ($mode -eq "upgrade") {
             $fwPath = $Query["fw"]
             if (-not $fwPath) { $fwPath = Join-Path $Root "build\Debug\AT32F421G8U7_WorkBench.bin" }
@@ -299,8 +316,13 @@ function Get-Status {
             }
         }
     }
-    $serialAge = if ($script:LastSerialData -eq [DateTime]::MinValue) { -1 }
-                 else { [int]((Get-Date) - $script:LastSerialData).TotalMilliseconds }
+    # 双线模式新鲜度: 用代理落盘文件 LastWriteTime 估算(心跳 1s/条)
+    $livePath = Bridge-LiveFile
+    $serialAge = -1
+    if (Test-Path $livePath) {
+        $ageSec = ((Get-Date) - (Get-Item $livePath).LastWriteTime).TotalSeconds
+        $serialAge = [int]($ageSec * 1000)
+    }
     return @{
         serverTime = (Get-Date).ToString("HH:mm:ss")
         processes  = @{ openocd = $openocd; gdb = $gdb }
@@ -313,6 +335,7 @@ function Get-Status {
             port         = $script:SerialTargetPort
             targetPort   = $SerialPort
             err          = $script:SerialErr
+            bridge       = (Bridge-Alive)
             lastDataAgeMs = $serialAge
         }
     }
@@ -333,43 +356,49 @@ try {
             } elseif ($path -eq "/api/status") {
                 Send-Json $ctx (Get-Status)
             } elseif ($path -eq "/api/serial") {
-                # 1) 透传卡死检测: 已连但 >15s 无数据(心跳 1s/条) → 强制重连
-                if ($script:SerialConnected -and $script:LastSerialData -ne [DateTime]::MinValue -and
-                    ((Get-Date) - $script:LastSerialData).TotalSeconds -gt 15) {
-                    Write-Host "串口 15s 无数据(透传可能卡死) → 强制重连"
-                    Close-Serial
-                }
+                # 双线模式: 数据来自 serial_bridge 代理落盘 serial.live
+                #   (代理独占 COM 口, OTA 走 TCP 透传, 两者互不影响, 无抢占)
                 if (Ensure-SerialConnected) {
-                    # 读新数据 → 拼残尾 → 按行入缓冲(上限 300 行) → 返回最近 60 行(前端覆盖式刷新)
-                    $new = ""
-                    try { $new = $script:Serial.ReadExisting() } catch {
-                        # 读异常: 端口已失效 → 标记断开, 下次请求自动重连
-                        Close-Serial
-                        $new = ""
+                    $livePath = Bridge-LiveFile
+                    $content = ""
+                    if (Test-Path $livePath) {
+                        $fs = [System.IO.File]::Open($livePath, [System.IO.FileMode]::Open,
+                              [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                        try { $content = [System.IO.StreamReader]::new($fs, [System.Text.Encoding]::UTF8).ReadToEnd() }
+                        finally { $fs.Dispose() }
                     }
-                    if ($new) {
-                        $script:LastSerialData = Get-Date
-                        $text = $script:SerialTail + $new
-                        $parts = $text -split "`n"
-                        $script:SerialTail = $parts[$parts.Count - 1]
-                        for ($i = 0; $i -lt $parts.Count - 1; $i++) {
-                            $l = $parts[$i].TrimEnd("`r")
-                            # 过滤控制字符(NUL/0x7F 等非可打印字节): 防固件遥测/杂散字节污染面板
-                            $l = $l -replace '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', ''
-                            if ($l -ne "") { [void]$script:SerialBuf.Add($l) }
-                        }
-                        if ($script:SerialBuf.Count -gt 300) {
-                            $script:SerialBuf.RemoveRange(0, $script:SerialBuf.Count - 300)
-                        }
-                    }
-                    $lines = @($script:SerialBuf | Select-Object -Last 60)
+                    $lines = @($content -split "`r?`n" | Where-Object {
+                            $_.Trim().Length -gt 0 -and $_ -notmatch '^\*+$' -and
+                            $_ -notmatch 'PowerShell transcript' } | Select-Object -Last 60)
+                    # 代理活着 + 文件新鲜 → live; 否则按断开处理(前端提示重连)
+                    $fresh = (Test-Path $livePath) -and
+                             (((Get-Date) - (Get-Item $livePath).LastWriteTime).TotalSeconds -le 30)
                     Send-Json $ctx @{
-                        live = $true; port = $script:SerialTargetPort; lines = $lines;
+                        live = ($fresh -or $lines.Count -gt 0)
+                        port = $script:SerialTargetPort
+                        lines = $lines
                         err = $script:SerialErr
+                        bridge = (Bridge-Alive)
                     }
                 } else {
                     Send-Json $ctx @{ live = $false; lines = @(); port = $script:SerialTargetPort; err = $script:SerialErr }
                 }
+            } elseif ($path -eq "/api/firmwares") {
+                # 固件下拉数据源: 列出 build 输出目录 .bin(按修改时间倒序)
+                $fwDirs = @(
+                    (Join-Path $Root "build\Debug"),
+                    (Join-Path $Root "build")
+                )
+                $fws = @()
+                foreach ($d in $fwDirs) {
+                    if (Test-Path $d) {
+                        $fws += @(Get-ChildItem $d -Filter *.bin -File -ErrorAction SilentlyContinue |
+                            Sort-Object LastWriteTime -Descending |
+                            ForEach-Object { @{ name = $_.Name; path = $_.FullName;
+                                              size = $_.Length; modified = $_.LastWriteTime.ToString("MM-dd HH:mm") } })
+                    }
+                }
+                Send-Json $ctx @{ firmwares = @($fws) }
             } elseif ($path -eq "/api/log") {
                 $name = $ctx.Request.QueryString["name"]
                 $lines = [int]$ctx.Request.QueryString["lines"]
@@ -379,7 +408,12 @@ try {
                 } else {
                     $logPath = Join-Path $LogDir "$name.log"
                     $content = if (Test-Path $logPath) {
-                        [System.IO.File]::ReadAllText($logPath, [System.Text.Encoding]::UTF8)
+                        # 共享读: cli_flash/编译/烧录 正在写该日志时, ReadAllText 会抛
+                        # "being used by another process" (500) → 用 FileShare.ReadWrite
+                        $fs = [System.IO.File]::Open($logPath, [System.IO.FileMode]::Open,
+                              [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                        try { [System.IO.StreamReader]::new($fs, [System.Text.Encoding]::UTF8).ReadToEnd() }
+                        finally { $fs.Dispose() }
                     } else { "" }
                     $arr = $content -split "`r?`n" | Where-Object { $_.Trim().Length -gt 0 }
                     $tail = $arr | Select-Object -Last $lines

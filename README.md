@@ -21,7 +21,9 @@
 - 构建 `tools/build.ps1`、烧录 `tools/flash.ps1`、调试 `tools/debug.ps1`、串口 `tools/serial.ps1`
 - 所有操作在终端可见、可记录、可回放 → AI（或 CI）可以端到端复现每一步，无需图形界面
 - 调试后端 = 开源 cortex-debug + OpenOCD，配置全在 `.vscode/` 且已进 Git
-- **可视化驾驶舱** `tools/dashboard.ps1`：编译/烧录/调试/串口日志四路输出实时汇到一个网页
+- **可视化驾驶舱** `tools/dashboard.ps1`：编译/烧录/调试/串口/OTA 五面板分页汇到一个网页
+  （`http://127.0.0.1:8080`，串口/OTA 走 **serial_bridge 双线代理**：常驻进程独占 COM，
+  监视读落盘文件、OTA 走 TCP 透传，互不抢占；OTA 固件可下拉选择）
 
 ### 3. 闭环调试能力（编译 → 烧录 → 日志 → 崩溃现场）
 | 环节 | 工具 | 能力 |
@@ -42,9 +44,12 @@
 - **驾驶舱 OTA 面板**（STM32-OTA-QT PyQt6 界面功能 Web 化移植）：
   - 按钮：开始升级（触发+全量/断点续传）、进入升级（仅触发）、查询进度（QUERY_OFFSET）、
     查询状态（QUERY_STATE）、重置（RESET_UPGRADE）、停止（杀进程）
-  - 控件：串口端口 / 固件 .bin 路径（可编辑）/ 每帧限速 / CRC 破坏帧号 + 进度条 + 状态徽章
-  - 后端：`dashboard_server.ps1` 新增 `ota_trigger/ota_query_offset/ota_stop` 动作；
-    执行前 `Close-Serial` 释放串口独占，完成后 `/api/serial` 自动重连
+  - 控件：串口端口 / 固件下拉（`/api/firmwares` 扫 build 目录 .bin，可手动填路径）/
+    每帧限速 / CRC 破坏帧号 + 进度条 + 状态徽章；未选固件默认主固件
+    `build/Debug/AT32F421G8U7_WorkBench.bin`
+  - 后端：`dashboard_server.ps1` 动作 `ota_trigger/ota_query_offset/ota_stop`；
+    **双线代理**：`serial_bridge.py` 常驻独占 COM（监视读 `logs/serial.live`、
+    OTA 走 `--bridge 127.0.0.1:5010` TCP 透传），无交接、无挂起锁，监视与 OTA 互不抢占
 
 ---
 

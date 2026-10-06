@@ -34,7 +34,15 @@ body{padding:14px 16px 40px}
 .upd.pulse .led{animation:updPulse 1.5s ease-in-out infinite}
 @keyframes updPulse{0%,100%{opacity:1}50%{opacity:.35}}
 /* ===== 面板栅格 ===== */
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.tabs button{background:var(--panel);border:1px solid var(--border);color:var(--dim);font-family:var(--mono);font-size:12.5px;padding:6px 16px;border-radius:6px;cursor:pointer;letter-spacing:.5px}
+.tabs button:hover{color:var(--text);border-color:var(--blue)}
+.tabs button.on{color:var(--text);border-color:var(--blue);background:#58a6ff14;font-weight:700}
+.tabs .tabs-count{font-size:11px;color:var(--dim);align-self:center;margin-left:4px}
+.page{display:none}
+.page.on{display:block}
+.page.on .pbody{max-height:calc(100vh - 240px);min-height:320px}
+.grid{display:grid;grid-template-columns:1fr;gap:14px}
 .panel{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;min-height:260px}
 .panel.serial{grid-column:span 1}
 .phead{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--panel2);border-bottom:1px solid var(--border);flex-wrap:wrap}
@@ -74,6 +82,11 @@ body{padding:14px 16px 40px}
 /* 断开提示条 */
 .note{padding:4px 12px;font-size:11.5px;background:#f8514914;color:#ff7b72;border-bottom:1px solid var(--border);display:none}
 .note.show{display:block}
+/* OTA 配置行(端口/固件/节流/CRC): 常显, 不是提示条 */
+.otacfg{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--dim)}
+.otacfg input,.otacfg select{background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11.5px;padding:2px 6px;border-radius:4px}
+.otacfg button{background:transparent;border:1px solid var(--border);color:var(--dim);font-family:var(--mono);font-size:11.5px;padding:2px 8px;border-radius:4px;cursor:pointer}
+.otacfg button:hover{color:var(--text);border-color:var(--blue)}
 /* ===== 响应式 ===== */
 @media(max-width:900px){ .grid{grid-template-columns:1fr} .panel.serial{grid-column:span 1} }
 @media(prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
@@ -92,33 +105,62 @@ body{padding:14px 16px 40px}
   <div class="stat svc" id="srvTime">–</div>
 </header>
 
-<main class="grid">
+<nav class="tabs" id="tabs">
+  <button class="on" data-page="build" onclick="switchPage('build')">编译<span class="tabs-count">cmake+ninja+gcc</span></button>
+  <button data-page="flash" onclick="switchPage('flash')">烧录<span class="tabs-count">openocd</span></button>
+  <button data-page="debug" onclick="switchPage('debug')">调试<span class="tabs-count">openocd gdb server</span></button>
+  <button data-page="serial" onclick="switchPage('serial')">串口日志<span class="tabs-count">实时监视</span></button>
+  <button data-page="ota" onclick="switchPage('ota')">OTA 升级<span class="tabs-count">Bootloader 协议</span></button>
+</nav>
+
+<main>
+  <div class="page on" id="page-build">
+    <div class="grid">
   <section class="panel" id="panel-build">
     <div class="phead"><span class="led" id="ledBuild"></span><span class="pname">编译<span class="sub">cmake+ninja+gcc</span></span><span class="spacer"></span><span class="meta" id="metaBuild">–</span><span class="pbtns"><button class="act" id="btn-build" onclick="runAction('build')">编译</button><button onclick="clearPanel('build')">清空</button></span></div>
     <div class="pbody" id="body-build"><div class="empty">等待构建日志…（点"编译"按钮或运行 tools\build.ps1）</div></div>
   </section>
+    </div>
+  </div>
 
+  <div class="page" id="page-flash">
+    <div class="grid">
   <section class="panel" id="panel-flash">
     <div class="phead"><span class="led" id="ledFlash"></span><span class="pname">烧录<span class="sub">openocd</span></span><span class="spacer"></span><span class="meta" id="metaFlash">–</span><span class="pbtns"><button class="act" id="btn-flash" onclick="runAction('flash')">烧录</button><button onclick="clearPanel('flash')">清空</button></span></div>
     <div class="pbody" id="body-flash"><div class="empty">等待烧录日志…（点"烧录"按钮或运行 tools\flash.ps1）</div></div>
   </section>
+    </div>
+  </div>
 
+  <div class="page" id="page-debug">
+    <div class="grid">
   <section class="panel" id="panel-debug">
     <div class="phead"><span class="led" id="ledDebug"></span><span class="pname">调试<span class="sub">openocd gdb server</span></span><span class="spacer"></span><span class="meta" id="metaDebug">–</span><span class="pbtns"><button class="act" id="btn-reset" onclick="runAction('reset')">复位运行</button><button onclick="clearPanel('debug')">清空</button></span></div>
     <div class="pbody" id="body-debug"><div class="empty">等待调试日志…（"复位运行"= openocd reset run）</div></div>
   </section>
+    </div>
+  </div>
 
+  <div class="page" id="page-serial">
+    <div class="grid">
   <section class="panel serial" id="panel-serial">
     <div class="phead"><span class="led" id="ledSerial"></span><span class="pname">串口日志<span class="sub">USART1 @115200</span></span><span class="spacer"></span><span class="meta" id="metaSerial">–</span><span class="pbtns"><button class="act" id="btn-serial-live" onclick="toggleLive()">实时:开</button><button class="act" id="btn-reconnect_serial" onclick="runAction('reconnect_serial')">重连</button><button class="act" onclick="refreshSerial()">刷新</button><button onclick="clearPanel('serial')">清空</button></span></div>
     <div class="note" id="serialNote"></div>
     <div class="pbody" id="body-serial"><div class="empty">等待串口数据…（插上 DAPLink 后自动连接）</div></div>
   </section>
+    </div>
+  </div>
+
+  <div class="page" id="page-ota">
+    <div class="grid">
   <section class="panel" id="panel-ota">
     <div class="phead"><span class="led" id="ledOta"></span><span class="pname">OTA 升级<span class="sub">Bootloader 协议 · AT32 profile（Qt 版功能移植）</span></span><span class="spacer"></span><span class="otaState" id="otaState">–</span><span class="meta" id="metaOta">–</span><span class="pbtns"><button class="act" id="btn-ota_upgrade" onclick="runOta('ota_upgrade')">开始升级</button><button class="act" id="btn-ota_trigger" onclick="runOta('ota_trigger')">进入升级</button><button class="act" id="btn-ota_query_offset" onclick="runOta('ota_query_offset')">查询进度</button><button class="act" id="btn-ota_query" onclick="runOta('ota_query')">查询状态</button><button class="act" id="btn-ota_reset" onclick="runOta('ota_reset')">重置</button><button class="act" id="btn-ota_stop" onclick="runOta('ota_stop')">停止</button><button onclick="clearPanel('ota')">清空</button></span></div>
-    <div class="note" id="otaNote">端口 <input id="otaPort" size="6" placeholder="自动"> 固件 <input id="otaFwPath" size="30" value="build/Debug/AT32F421G8U7_WorkBench.bin"> 限制s/帧 <input id="otaThrottle" size="3" placeholder="0"> CRC破坏帧 <input id="otaCorrupt" size="4" placeholder="-1"></div>
+    <div class="otacfg" id="otaNote">端口 <input id="otaPort" size="6" placeholder="自动"> 固件 <select id="otaFwSel" onchange="onFwPick()"><option value="">加载中…</option></select><button onclick="loadFirmwares()" title="刷新固件列表">↻</button> <input id="otaFwPath" size="26" value="build/Debug/AT32F421G8U7_WorkBench.bin" title="固件路径(从下拉选或手动填)"> 限制s/帧 <input id="otaThrottle" size="3" placeholder="0"> CRC破坏帧 <input id="otaCorrupt" size="4" placeholder="-1"></div>
     <div class="progress"><div class="progress-bar" id="otaBar" style="width:0%"></div><span class="progress-txt" id="otaPct">0%</span></div>
     <div class="pbody" id="body-ota"><div class="empty">等待 OTA 日志…（"开始升级"= 触发+全量/续传；"进入升级"只发触发信号）</div></div>
   </section>
+    </div>
+  </div>
 </main>
 
 <script>
@@ -132,8 +174,53 @@ var ACTION_BTN  = {build:'btn-build', flash:'btn-flash', reset:'btn-reset', reco
 var ACTION_LABEL= {build:'编译', flash:'烧录', reset:'复位运行', reconnect_serial:'重连', ota_upgrade:'开始升级', ota_query:'查询状态', ota_reset:'重置', ota_trigger:'进入升级', ota_query_offset:'查询进度', ota_stop:'停止'};
 var ACTION_SER  = ['build','flash','reset','ota_upgrade','ota_query','ota_reset','ota_trigger','ota_query_offset'];   // 服务端有 running 跟踪的动作(ota_stop 杀进程后立即归位)
 var btnState = {};                      // cmd → busy|done|fail|null
+var curPage = 'build';                  // 当前分页: build|flash|debug|serial|ota
 
 function el(id){ return document.getElementById(id); }
+
+/* ===== 分页 ===== */
+function switchPage(name){
+  curPage = name;
+  var tabs = document.querySelectorAll('#tabs button');
+  for (var i = 0; i < tabs.length; i++){
+    tabs[i].className = (tabs[i].getAttribute('data-page') === name) ? 'on' : '';
+  }
+  var pages = document.querySelectorAll('.page');
+  for (var j = 0; j < pages.length; j++){
+    pages[j].className = 'page' + (pages[j].id === 'page-' + name ? ' on' : '');
+  }
+  if (name === 'serial') fetchSerial(false);      // 切到串口页立即刷一次
+  if (name === 'ota') loadFirmwares();            // 切到 OTA 页刷新固件列表
+}
+
+/* ===== OTA 固件下拉(/api/firmwares) ===== */
+async function loadFirmwares(){
+  var sel = el('otaFwSel');
+  try {
+    var r = await fetch('/api/firmwares', {cache:'no-store'});
+    var d = await r.json();
+    var fws = d.firmwares || [];
+    if (!fws.length){ sel.innerHTML = '<option value="">无固件(先编译)</option>'; return; }
+    // 按修改时间倒序(接口已排), 默认选中主固件(非 boot)
+    var html = '';
+    var mainIdx = 0;
+    for (var i = 0; i < fws.length; i++){
+      var f = fws[i];
+      var label = f.name + ' · ' + (f.size/1024).toFixed(1) + ' KB · ' + f.modified;
+      html += '<option value="' + esc(f.path) + '">' + esc(label) + '</option>';
+      if (/WorkBench/i.test(f.name)) mainIdx = i;
+    }
+    sel.innerHTML = html;
+    sel.selectedIndex = mainIdx;
+    onFwPick();
+  } catch(e){
+    sel.innerHTML = '<option value="">固件列表加载失败</option>';
+  }
+}
+function onFwPick(){
+  var sel = el('otaFwSel');
+  if (sel.selectedIndex >= 0 && sel.value) el('otaFwPath').value = sel.value;
+}
 
 function esc(s){
   var d = document.createElement('div');
@@ -394,6 +481,7 @@ async function poll(){
 }
 
 poll();
+loadFirmwares();
 setInterval(poll, 2500);
 </script>
 </body>

@@ -11,6 +11,7 @@ CLI 端到端 OTA 升级验证（无 GUI, 供 CI / AI 自动化调用）
 """
 
 import argparse
+import socket
 import struct
 import sys
 import time
@@ -43,13 +44,82 @@ STATE_SUCCESS = 0xA5A5A5A4
 MAX_RETRY = 3
 
 
+class BridgeSerial:
+    """经 serial_bridge.py 双线代理收发, 接口对齐 pyserial.Serial。
+
+    代理独占 COM 口; 本类把 TCP 透传通道包装成串口语义:
+      read(n)    超时返回 b""(对齐 pyserial 的 timeout)
+      write/flush  → socket.sendall
+      timeout     可读写(扫描 ACK 时切短超时)
+    """
+
+    def __init__(self, host, port, timeout=3, write_timeout=3):
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+        self._sock = socket.create_connection((host, port), timeout=5)
+        self._sock.settimeout(timeout)
+        self._buf = b""
+        self.is_open = True  # 对齐 pyserial: 建连即视为打开
+
+    def reset_input_buffer(self):
+        self._buf = b""
+
+    def reset_output_buffer(self):
+        pass
+
+    def _fill(self, n):
+        while len(self._buf) < n:
+            try:
+                d = self._sock.recv(4096)
+            except socket.timeout:
+                return False
+            except Exception:
+                return False
+            if not d:
+                return False
+            self._buf += d
+        return True
+
+    def read(self, size=1):
+        if size <= 0:
+            return b""
+        if not self._fill(size):
+            out, self._buf = self._buf, b""
+            return out
+        out, self._buf = self._buf[:size], self._buf[size:]
+        return out
+
+    def write(self, data):
+        self._sock.sendall(data)
+
+    def flush(self):
+        pass
+
+    def close(self):
+        try:
+            self._sock.close()
+        except Exception:
+            pass
+
+
 class CliIAP:
-    def __init__(self, port, baud, profile, reset_dir=None):
+    def __init__(self, port, baud, profile, reset_dir=None, bridge=None):
         self._port = port
         self._baud = baud
         self._profile = profile
         self._reset_dir = reset_dir
+        self._bridge = bridge
         self._ser = None
+
+    def _open_serial(self):
+        """直连 COM 口, 或经 serial_bridge TCP 透传(双线模式)"""
+        if self._bridge:
+            host, _, port = self._bridge.partition(":")
+            self._ser = BridgeSerial(host, int(port), timeout=3, write_timeout=3)
+        else:
+            self._ser = serial.Serial(port=self._port, baudrate=self._baud,
+                                      timeout=3, write_timeout=3)
 
     # ---- 串口 ----
     def _read_byte(self):
@@ -59,54 +129,63 @@ class CliIAP:
     def _recv_frame(self):
         """接收应答帧，返回 (cmd, params) 或 (None, None)
 
-        防御（驾驶舱集成实测踩坑）: APP 运行时串口是持续心跳数据流, 数据中
-        假 0xAA 帧头会让扫描循环不断消费、外层 deadline 无法打断（卡死）。
-        单次最多消费 MAX_FRAME_SCAN 字节, 超限视为无有效应答返回。"""
-        MAX_FRAME_SCAN = 64
-        scanned = 0
-        while True:
+        防御（驾驶舱集成实测踩坑）:
+          A) APP 运行时串口是持续心跳数据流, 数据中假 0xAA 帧头会让扫描循环
+             不断消费、外层 deadline 无法打断（卡死）→ 单次消费上限 MAX_FRAME_SCAN。
+          B) Boot 升级时每收一字节都 printf "RX: 0x..", ACK 帧淹没在打印流尾部;
+             read(1) 若沿用 3s 超时, 在打印间隙会阻塞吞掉 ACK deadline（帧2 ACK
+             超时根因）→ 扫描期间用 0.1s 短超时, 无数据快速返回, 循环直到 ACK 到达。
+        """
+        MAX_FRAME_SCAN = 8192
+        old_to = self._ser.timeout
+        self._ser.timeout = 0.1
+        try:
+            scanned = 0
+            while True:
+                b = self._read_byte()
+                scanned += 1
+                if b is None or scanned > MAX_FRAME_SCAN:
+                    return None, None
+                if b == 0xAA:
+                    break
             b = self._read_byte()
             scanned += 1
-            if b is None or scanned > MAX_FRAME_SCAN:
+            if b is None or b != 0x02 or scanned > MAX_FRAME_SCAN:
                 return None, None
-            if b == 0xAA:
-                break
-        b = self._read_byte()
-        scanned += 1
-        if b is None or b != 0x02 or scanned > MAX_FRAME_SCAN:
-            return None, None
-        cmd = self._read_byte()
-        scanned += 1
-        if cmd is None or scanned > MAX_FRAME_SCAN:
-            return None, None
-        param_len = self._read_byte()
-        scanned += 1
-        if param_len is None or scanned > MAX_FRAME_SCAN:
-            return None, None
-        params = bytearray()
-        for _ in range(param_len):
+            cmd = self._read_byte()
+            scanned += 1
+            if cmd is None or scanned > MAX_FRAME_SCAN:
+                return None, None
+            param_len = self._read_byte()
+            scanned += 1
+            if param_len is None or scanned > MAX_FRAME_SCAN:
+                return None, None
+            params = bytearray()
+            for _ in range(param_len):
+                b = self._read_byte()
+                scanned += 1
+                if b is None or scanned > MAX_FRAME_SCAN:
+                    return None, None
+                params.append(b)
+            crc_bytes = bytearray()
+            for _ in range(4):
+                b = self._read_byte()
+                scanned += 1
+                if b is None or scanned > MAX_FRAME_SCAN:
+                    return None, None
+                crc_bytes.append(b)
+            crc_recv = struct.unpack("<I", bytes(crc_bytes))[0]
             b = self._read_byte()
             scanned += 1
-            if b is None or scanned > MAX_FRAME_SCAN:
+            if b is None or b != 0x55 or scanned > MAX_FRAME_SCAN:
                 return None, None
-            params.append(b)
-        crc_bytes = bytearray()
-        for _ in range(4):
-            b = self._read_byte()
-            scanned += 1
-            if b is None or scanned > MAX_FRAME_SCAN:
+            from core.protocol import crc32_calc
+            crc_calc = crc32_calc(bytes([0x02, cmd, param_len]) + bytes(params))
+            if crc_calc != crc_recv:
                 return None, None
-            crc_bytes.append(b)
-        crc_recv = struct.unpack("<I", bytes(crc_bytes))[0]
-        b = self._read_byte()
-        scanned += 1
-        if b is None or b != 0x55 or scanned > MAX_FRAME_SCAN:
-            return None, None
-        from core.protocol import crc32_calc
-        crc_calc = crc32_calc(bytes([0x02, cmd, param_len]) + bytes(params))
-        if crc_calc != crc_recv:
-            return None, None
-        return cmd, bytes(params)
+            return cmd, bytes(params)
+        finally:
+            self._ser.timeout = old_to
 
     def _send_raw(self, data):
         self._ser.write(data)
@@ -181,8 +260,7 @@ class CliIAP:
               f"APP_SIZE={self._profile['app_size']} "
               f"PACKET={PACKET_SIZE}", flush=True)
         print(f"[open] {self._port} @ {self._baud}", flush=True)
-        self._ser = serial.Serial(port=self._port, baudrate=self._baud, timeout=3,
-                                  write_timeout=3)  # write 超时: CDC 写方向挂死防卡
+        self._open_serial()
         self._ser.reset_input_buffer()
         self._ser.reset_output_buffer()
         time.sleep(0.3)
@@ -312,8 +390,7 @@ class CliIAP:
         """发 QUERY_STATE 打印 Boot 升级状态（不触发升级）"""
         print(f"[cfg] profile={profile_name()}", flush=True)
         print(f"[open] {self._port} @ {self._baud}", flush=True)
-        self._ser = serial.Serial(port=self._port, baudrate=self._baud, timeout=3,
-                                  write_timeout=3)  # write 超时: CDC 写方向挂死防卡
+        self._open_serial()
         print("[dbg] serial opened", flush=True)
         self._ser.reset_input_buffer()
         print("[dbg] buffer reset", flush=True)
@@ -340,8 +417,7 @@ class CliIAP:
         """发 RESET_UPGRADE 命令帧：升级状态复擦除 → READY（断电续传起点清零）"""
         print(f"[cfg] profile={profile_name()}", flush=True)
         print(f"[open] {self._port} @ {self._baud}", flush=True)
-        self._ser = serial.Serial(port=self._port, baudrate=self._baud, timeout=3,
-                                  write_timeout=3)  # write 超时: CDC 写方向挂死防卡
+        self._open_serial()
         self._ser.reset_input_buffer()
         time.sleep(0.3)
         try:
@@ -364,8 +440,7 @@ class CliIAP:
         """只发送触发信号让 APP 停机进入 Boot 升级窗口，不发送固件"""
         print(f"[cfg] profile={profile_name()}", flush=True)
         print(f"[open] {self._port} @ {self._baud}", flush=True)
-        self._ser = serial.Serial(port=self._port, baudrate=self._baud, timeout=3,
-                                  write_timeout=3)
+        self._open_serial()
         self._ser.reset_input_buffer()
         time.sleep(0.3)
         try:
@@ -396,8 +471,7 @@ class CliIAP:
         """发 QUERY_OFFSET 打印 Boot 已写入页数（断电续传断点）"""
         print(f"[cfg] profile={profile_name()}", flush=True)
         print(f"[open] {self._port} @ {self._baud}", flush=True)
-        self._ser = serial.Serial(port=self._port, baudrate=self._baud, timeout=3,
-                                  write_timeout=3)
+        self._open_serial()
         self._ser.reset_input_buffer()
         time.sleep(0.3)
         try:
@@ -431,6 +505,9 @@ def main():
     ap.add_argument("--reset-dir", default=None,
                     help="openocd 脚本目录(含 openocd/ 子目录), 提供则硬件复位"
                          "(Boot 置 SUCCESS 后命令帧失效必须硬件复位)")
+    ap.add_argument("--bridge", default=None,
+                    help="经 serial_bridge TCP 透传(host:port, 如 127.0.0.1:5010), "
+                         "与串口监视器双线共存(根治抢占)")
     args = ap.parse_args()
 
     if args.mode == "upgrade" and not args.firmware:
@@ -442,19 +519,20 @@ def main():
 
     try:
         if args.mode == "query":
-            runner = CliIAP(args.port, profile["baud"], profile)
+            runner = CliIAP(args.port, profile["baud"], profile, bridge=args.bridge)
             ok = runner.run_query()
         elif args.mode == "reset":
-            runner = CliIAP(args.port, profile["baud"], profile)
+            runner = CliIAP(args.port, profile["baud"], profile, bridge=args.bridge)
             ok = runner.run_reset()
         elif args.mode == "trigger":
-            runner = CliIAP(args.port, profile["baud"], profile)
+            runner = CliIAP(args.port, profile["baud"], profile, bridge=args.bridge)
             ok = runner.run_trigger()
         elif args.mode == "query_offset":
-            runner = CliIAP(args.port, profile["baud"], profile)
+            runner = CliIAP(args.port, profile["baud"], profile, bridge=args.bridge)
             ok = runner.run_query_offset()
         else:
-            runner = CliIAP(args.port, profile["baud"], profile, reset_dir=args.reset_dir)
+            runner = CliIAP(args.port, profile["baud"], profile, reset_dir=args.reset_dir,
+                            bridge=args.bridge)
             ok = runner.run(args.firmware, listen_after=args.listen,
                             throttle=args.throttle, corrupt_frame=args.corrupt_frame)
         print("[result]", "PASS" if ok else "FAIL", flush=True)
