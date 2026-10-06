@@ -26,10 +26,20 @@ void OtaJump_ToApp(void)
         /* 切 VTOR 到 APP 向量表 */
         SCB->VTOR = APP_START_ADDRESS;
 
-        /* 取 APP 复位向量 + 初始化 MSP + 跳转 */
+        /* 取 APP 复位向量 */
         uint32_t jump_addr = *(volatile uint32_t *)(APP_START_ADDRESS + 4);
-        pFunction jump_to_app = (pFunction)jump_addr;
-        __set_MSP(app_sp);
-        jump_to_app();
+
+        /* 坑(踩坑指南 §25): 必须用内联汇编"设MSP+bx"原子完成,
+           不能先 __set_MSP() 再 C 函数调用 jump_to_app() ——
+           C 编译器在函数返回前会生成 ldmia sp!,{r4-r6,lr} 恢复寄存器,
+           此时 SP 已是 APP 栈顶(0x20004000 = SRAM末尾+1, 超出16KB范围),
+           从非法地址读触发 BusFault→HardFault, PC=0, APP 永远起不来。
+           内联汇编在 msr msp 后直接 bx, 中间无栈操作。 */
+        __asm volatile(
+            "msr msp, %0\n"
+            "bx %1\n"
+            : : "r"(app_sp), "r"(jump_addr)
+        );
+        /* 不会到达这里 */
     }
 }
