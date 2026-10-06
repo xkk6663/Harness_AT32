@@ -1,5 +1,12 @@
 # AT32F421G8U7 BLDC 电调开发台架（Harness_AT32）
 
+![CI](https://github.com/xkk6663/Harness_AT32/actions/workflows/build.yml/badge.svg)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20AT32F421G8U7-blue)
+![Toolchain](https://img.shields.io/badge/Toolchain-CMake%20%2B%20Ninja%20%2B%20GCC%20%2B%20OpenOCD%20%2B%20GDB-green)
+![OTA](https://img.shields.io/badge/OTA-Bootloader%20%2B%20APP%20%2B%20CLI%20%2B%20Dashboard-orange)
+![Language](https://img.shields.io/badge/Language-C%20%7C%20Python%20%7C%20PowerShell-yellow)
+![Dashboard](https://img.shields.io/badge/Dashboard-5%20Panels%20%7C%20Serial%20Bridge%20%7C%20Sniff-purple)
+
 无刷直流电机（BLDC）电调开发台架，主控 **AT32F421G8U7**（Cortex-M4F，120MHz，64KB Flash，16KB SRAM）。
 电机算法库：`SguanESC/`。图形化配置由 **AT32 Work Bench**（`.ATWP`）生成，其余全部是
 **纯命令行开源工具链**：CMake + Ninja + GCC + OpenOCD + GDB，可脚本化、可进 CI、可被 AI 直接操作。
@@ -188,16 +195,39 @@ openocd -s . -f openocd/interface/cmsis-dap.cfg -f openocd/target/at32f421xx.cfg
 
 **全链路零插件**：触发（APP 停机链）→ Boot 收固件（YMODEM-like 自定义协议）→ CRC32 校验 → 写状态页 → 复位 → Boot 跳 APP（内联汇编原子跳转）→ APP 心跳恢复，全部通过 CMake+OpenOCD+GDB+Python 工具链完成。
 
-### 状态机与地址表（`ota/core/upgrade_state.h`、`ota_common.h`）
-| 项 | 值 |
-|---|---|
-| FLASH_BASE_ADDR | 0x08000000 |
-| BOOTLOADER_SIZE | 0x4800（18KB，0x08000000~0x080047FF） |
-| APP_START_ADDRESS | 0x08004800（44KB，0x08004800~0x0800F7FF） |
-| OFFSET_PAGE_ADDR | 0x0800F800（页 62，断电续传已写页数） |
-| UPGRADE_STATE_ADDR | 0x0800FC00（页 63，状态字） |
-| APP_PAGE_COUNT | 44 / PACKET_SIZE 128 / DMA_RX_BUF 1024 |
-| 状态码 | RUNNING=0xA5A5A5A0 / READY=A1 / UPGRADING=A2 / CRC_FAIL=A3 / SUCCESS=A4 |
+### Flash 内存布局与状态机
+
+**Flash 分区（64KB 总容量）**
+
+![OTA Flash 内存布局](docs/screenshots/ota_flash_layout.png)
+
+| 地址 | 分区 | 大小 | 说明 |
+|---|---|---|---|
+| `0x08000000` | Bootloader | 18KB（0x4800） | IAP 引导程序，独立链接脚本 `AT32F421x8_BOOT.ld` |
+| `0x08004800` | APP | 44KB | 业务固件（BLDC 电机库），向量表重定位到此，`SCB->VTOR = 0x08004800` |
+| `0x0800F800` | OFFSET 页（页 62） | 1KB | 断电续传：已写页数，上位机查询后从断点续传 |
+| `0x0800FC00` | STATE 页（页 63） | 1KB | 升级状态字，**FlashStore 磨损均衡**（一页 256 个 32-bit slot，从后向前扫描取最新值） |
+
+**Boot 状态机流程图**
+
+![OTA Boot 状态机](docs/screenshots/ota_state_machine.png)
+
+**状态码**（`ota/core/ota_common.h`）：
+
+| 状态 | 值 | 含义 | Boot 行为 |
+|---|---|---|---|
+| `STATE_RUNNING` | `0xA5A5A5A0` | 正常运行（或擦除后默认） | 2 秒窗口等 `"!!!!!"` 触发；超时则跳 APP |
+| `STATE_UPGRADE_READY` | `0xA5A5A5A1` | APP 请求升级 | 擦除 APP 分区 → 写 `UPGRADING` → 复位 → 进升级模式 |
+| `STATE_UPGRADING` | `0xA5A5A5A2` | 正在接收固件 | 进升级模式死循环，等上位机逐帧发送（支持断电续传） |
+| `STATE_CRC_FAIL` | `0xA5A5A5A3` | 固件接收完成但 CRC 校验失败 | `while(1)` 等 `"!!!!!"` 重触发，不响应命令帧 |
+| `STATE_UPGRADE_SUCCESS` | `0xA5A5A5A4` | 固件校验通过 | 打印 `Upgrade complete. Final CRC: 0x...` → 硬件复位 → 跳 APP |
+
+**状态机关键原理**：
+1. **复位即读状态**：Boot 启动第一件事是读 `0x0800FC00` 的最新状态 slot（FlashStore 从页尾向前扫），决定走哪条分支
+2. **RUNNING 分支的 2 秒窗口**：正常启动时 Boot 不直接跳 APP，而是等 2 秒看有没有 `"!!!!!"` 触发——这是为了让上位机有机会在 APP 崩溃/起不来时强制进升级模式（不需要按键）
+3. **UPGRADING 分支死循环**：进升级模式后 Boot 不再跳 APP，纯靠协议帧收固件；即使断电，下次复位状态仍是 UPGRADING，上位机查 OFFSET 页从断点续传
+4. **SUCCESS 后必须硬件复位**：Boot 写完 SUCCESS 后 `while(1)` 死循环（防串口噪声冲写），靠上位机监听 `Upgrade complete` 打印后发 openocd `reset run` 硬件复位，复位后 Boot 读到 SUCCESS → 跳 APP
+5. **CRC_FAIL 回退**：CRC 校验失败不自动重传，而是等 `"!!!!!"` 重新触发完整升级（状态回 UPGRADING）
 
 ### 协议帧
 `SOF 0xAA + TYPE(0x01数据/0x02命令) + [CMD/LEN] + PAYLOAD + CRC32(LE, poly 0xEDB88320) + EOF 0x55`
@@ -236,8 +266,13 @@ python logs\m4_regression.py   # T1 查询重置 / T2 断电续传 / T3 CRC破�
 ## 六、驾驶舱（可选，纯本地）
 
 `tools/dashboard.ps1` 一键起服务（`127.0.0.1:8080`）+ 打开浏览器：
-- **四个实时面板**：编译 / 烧录 / 调试 / 串口日志，数据来自 `logs/` 下各脚本的落盘输出（2.5s 轮询）
+- **五个实时面板**：编译 / 烧录 / 调试 / 串口日志 / OTA 升级，数据来自 `logs/` 下各脚本的落盘输出（2.5s 轮询）
 - **全局状态栏**：openocd / gdb 进程占用、最新心跳（tick / high_loop / ADC）、elf 大小与时间
+- **串口面板左右布局**：
+  - 左栏 `RX · 设备→PC（文本日志）`：心跳、启动信息等可读文本，支持文本/HEX 两种显示模式
+  - 右栏 `TX · PC→设备（嗅探转储 HEX）`：桥主动生成的原始字节流 HEX 转储（`RX: 0x AA BB..` / `TX: 0x..`），与主日志独立存储展示，便于诊断协议/乱码
+  - TX 发送框经桥 TX 控制端口（5011）写 COM，发送内容同时进入嗅探转储
+- **OTA 面板**：固件下拉选择 / 进度条 / 状态徽章 / 六种操作按钮（开始升级/进入升级/查询进度/查询状态/重置/停止），后端走 `cli_flash.py --bridge 127.0.0.1:5010` TCP 透传
 - 每个面板带操作按钮（重编译 / 重烧录 / 刷新串口等）
 - 停止服务：`Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" | Where-Object { $_.CommandLine -like '*dashboard_server*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`
 
