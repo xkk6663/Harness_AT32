@@ -104,22 +104,24 @@ AT32F421G8U7_WorkBench/
 ├── ota/                          # 【OTA】平台化核心 + 移植层
 │   ├── core/                     #   纯 C 核心库（protocol/crc32/flash_store/upgrade_state/offset/transport）
 │   └── port/at32/                #   AT32 移植层（flash_hal/usart_hal/delay/printf/jump/ota_app_hook）
-├── project/                      # ATWP 生成代码 + 用户钩子区（业务入口）
+├── project/                      # ATWP 图形化配置生成代码 + 用户钩子区（业务入口）
 │   ├── src/
 │   │   ├── main.c                # VTOR 重定位 + __enable_irq + OtaAppHook_HandleTrigger
 │   │   ├── at32f421_int.c        # USART1 IDLE + DMA 接收（OTA 触发扫描）
+│   │   ├── at32f421_wk_config.c  # 【ATWP 生成】外设配置（图形化界面重新生成时覆盖此文件）
+│   │   ├── wk_system.c            # 【ATWP 生成】系统时钟 / systick
+│   │   ├── wk_usart.c             # 【ATWP 生成】串口
+│   │   ├── wk_dma.c               # 【ATWP 生成】DMA
+│   │   ├── wk_adc.c               # 【ATWP 生成】ADC
+│   │   ├── wk_tmr.c / wk_tmr15.c  # 【ATWP 生成】定时器
+│   │   ├── Timer.c                 # 板级定时器封装
 │   │   ├── syscalls.c / sysmem.c # 系统支撑（semihosting 规避）
 │   └── inc/
 │       ├── at32f421_conf.h       # 库配置头
-│       └── at32f421_int.h
-├── middlewares/                  # 【中间层】硬件驱动之上、业务之下（架构重构后统一收纳）
-│   ├── wk_system.c/h             #   系统时钟 / systick
-│   ├── wk_usart.c/h              #   串口中间层
-│   ├── wk_dma.c/h                #   DMA 中间层
-│   ├── wk_adc.c/h                #   ADC 中间层
-│   ├── wk_tmr.c/h + wk_tmr15.c/h #   定时器中间层
-│   ├── at32f421_wk_config.c/h    #   ATWP 外设配置
-│   └── Timer.c/h                 #   板级定时器封装（原 Hardware/）
+│       ├── at32f421_int.h
+│       ├── at32f421_wk_config.h  # 【ATWP 生成】外设配置头
+│       ├── wk_system.h / wk_usart.h / wk_dma.h / wk_adc.h / wk_tmr.h / wk_tmr15.h  # 【ATWP 生成】
+│       └── Timer.h                # 板级定时器封装头
 ├── libraries/                    # CMSIS + AT32 标准外设库
 ├── SguanESC/                     # 电机库（BLDC 算法，勿动）
 ├── crash/crash.c                 # 崩溃现场记录器（naked 强符号接管 4 个 fault handler）
