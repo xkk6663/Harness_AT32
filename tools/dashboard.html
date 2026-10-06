@@ -183,7 +183,7 @@ body{padding:14px 16px 40px}
 
 <script>
 'use strict';
-var PANELS = ['build','flash','debug','serial','ota'];
+var PANELS = ['build','flash','debug','serial','ota','sniff'];
 var LIMIT = {build:120, flash:80, debug:120, serial:60, ota:150, sniff:80};
 var lastLines = {}; PANELS.forEach(function(n){ lastLines[n] = []; });
 var offlineShown = false;
